@@ -25,6 +25,7 @@
     "loom": "node bin/loom.mjs",
     "test": "npm run build && node scripts/test.mjs",
     "test:lightweight": "node test/lightweight/run.mjs",
+    "test:governance": "node test/lightweight/governance.mjs",
     "privacy:check": "node scripts/privacy-check.mjs",
     "privacy:history": "node scripts/privacy-check.mjs --history",
     "check": "npm run typecheck && npm test && npm run privacy:check",

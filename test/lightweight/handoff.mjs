@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
-import { relative, isAbsolute, sep } from 'node:path';
-import { resolveTaskPath } from '../../packages/container-core/src/index.ts';
+import { relative, isAbsolute, sep, resolve } from 'node:path';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -23,7 +22,9 @@ export function httpSnapshot(result, requestedUrl) {
 }
 
 export async function containedFile(root, path) {
-  const resolved = await realpath(resolveTaskPath(root, path));
+  assert(typeof path === 'string' && path && !isAbsolute(path) && !path.includes('\\')
+    && !path.includes(':') && path.split('/').every(part => part && part !== '.' && part !== '..'), 'Invalid relative path');
+  const resolved = await realpath(resolve(root, path));
   const rel = relative(await realpath(root), resolved);
   assert(rel && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel), 'File escapes Task');
   return resolved;

@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { executeSession, LocalTaskStore, prepareSession } from '../../packages/container-core/src/index.ts';
-import { createPiSessionHost } from '../../packages/runtime-pi/src/index.ts';
+import { createPiApplicationHost, createPiSessionHost } from '../../packages/runtime-pi/src/index.ts';
 import type { PiSdk, PiSessionHostOptions } from '../../packages/runtime-pi/src/index.ts';
 import { artifact, session, testApplication, timestamp } from '../helpers.ts';
+import { createHash } from 'node:crypto';
 
 async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' | 'load' | 'extra') {
   const root = await mkdtemp(join(tmpdir(), 'loom-pi-host-'));
@@ -81,6 +82,44 @@ test('Pi host binds a native ID, initializes before discovery and flushes shutdo
     realpath(f.options.bindings['test-domain']!.entry), realpath(f.options.bindings['test-observer']!.entry),
   ]));
   assert.deepEqual(f.loadedSettings(), { defaultModel: 'test-model' });
+});
+
+test('Application host derives publication provenance and lifecycle from the active Session', async t => {
+  const f = await setup(t);
+  const bytes = 'Native adapter output';
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { entry: f.options.bindings['test-domain']!.entry,
+      async initialize(context) { assert.equal(context.task_id, f.store.task.id); },
+      async run(_native, context) {
+        await writeFile(join(context.task_root, 'native-output.txt'), bytes);
+        return [{ type: 'SyntheticHandoff', version: '3', path: 'native-output.txt', verification_status: 'READY' }];
+      } },
+    'test-observer': f.options.bindings['test-observer']!,
+  } });
+  const result = await executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'actual-operator' });
+  const [published] = await f.store.listArtifacts();
+  assert.equal(published!.producer.session_id, result.id);
+  assert.equal(published!.producer.plugin_id, 'test-domain');
+  assert.deepEqual(published!.executor, { actor_id: 'actual-operator', runtime_id: 'pi' });
+  assert.equal(published!.sha256, createHash('sha256').update(bytes).digest('hex'));
+  const events = await f.store.listEvents(result.id);
+  assert(events.some(event => event.type === 'runtime.pi.started' && event.actor_id === 'actual-operator'));
+  assert(events.some(event => event.type === 'runtime.pi.shutdown'));
+});
+
+test('Application host rejects an invalid publication without indexing success', async t => {
+  const f = await setup(t);
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { entry: f.options.bindings['test-domain']!.entry,
+      async initialize() {}, async run() {
+        return [{ type: 'SyntheticHandoff', version: '3', path: '../outside.txt', verification_status: 'READY' }];
+      } },
+    'test-observer': f.options.bindings['test-observer']!,
+  } });
+  await assert.rejects(executeSession(f.store, await prepareSession(f.store, 'test-profile'), host, { id: 'actor' }),
+    { code: 'NativeExecutionFailed' });
+  assert.equal((await f.store.listArtifacts()).length, 0);
+  assert.equal((await f.store.listSessions())[0]!.status, 'failed');
 });
 
 test('Pi native initializer rejection cannot load extensions, run, or record consumption', async t => {

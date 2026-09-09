@@ -15,9 +15,9 @@ C2Decoder Session consuming that Artifact within the same Task. Postmortem is a
 cross-cutting observer in both Sessions. Plugin implementations retain ownership of
 domain verification, tools, guards, and reflection.
 
-**Status: Core governance and an initial CLI are implemented.** Real Plugin
-compatibility and the complete v0.1 loop are pending. The Pi 0.85.1 reference target
-comes from the design baseline and has not been validated by this repository.
+**Status: Core governance, CLI bindings and a native Pi application host are implemented.**
+The optional public Plugin experiments exercise Pi 0.85.1. Compatibility of the
+original reference group and the complete v0.1 product experience remain pending.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ npm run loom -- session start --task example-task --profile c2forge --dry-run
 ```
 
 Application validation without `--definition-only` and Session startup without
-`--dry-run` or a local Host currently fail with `NativeIntegrationNotReady`.
+`--dry-run` require a configured local Host; otherwise they fail with `NativeIntegrationNotReady`.
 `--definition-only` and `--dry-run` exercise validation and dependency planning only.
 A missing READY Handoff fails with `PreconditionNotSatisfied` before consumer execution.
 
@@ -69,8 +69,19 @@ The same module can export `validateNativeApplication({ application })` for
 the local SDK and all Profile bindings without executing a domain task. Its output
 is explicitly `host-preflight-passed`; it is not an E2E acceptance result.
 
-Built-in domain initialization and Artifact publication adapters remain unfinished.
-Supplying a Host does not establish Plugin compatibility or complete v0.1 acceptance.
+An Application module can export `nativeHost = './host.mjs'`, relative to that
+module. Validation uses it automatically. Task creation captures this executable
+local binding separately in `.agent-loom/native-host.json`; subsequent Sessions
+need only Task and Profile. `task create --host-module` selects another binding,
+and `session start --host-module` overrides it for one invocation. This is a
+trusted local code reference, not a portable or immutable copy of the Host source.
+
+`createPiApplicationHost` maps Application binding keys to reusable adapters.
+Adapters verify inputs and return native publication facts; the Host derives
+Artifact provenance from the active Session, hashes the referenced files, and
+records lifecycle observations. Native rejection phases are inspectable without
+exposing raw domain errors. Domain verification remains in adapters.
+Supplying a Host does not establish compatibility of every Plugin or complete v0.1 acceptance.
 
 Task creation stores an Application snapshot. Later commands find the Task through a
 local index, independent of the current working directory or original definition file.
@@ -129,10 +140,15 @@ decisions while running real native tools; a separate model mode accepts a live
 URL and the existing Pi default model. It complements the original reference
 Application and does not establish its domain acceptance.
 
-The next steps are native Artifact publication and initialization, full compatibility
-verification, observer isolation, and a complete real E2E run. Synthetic Core coverage and real Plugin
-acceptance remain separate. Local planning directories `doc/` and `docs/` are excluded
-from version control.
+The [governance experiment](test/lightweight/GOVERNANCE.md) uses the formal CLI,
+checks reuse and failure boundaries, and compares a no-Loom control using the same
+domain adapters. It separates reusable governance ownership from per-task manual
+steps and makes no model-speed claim.
+
+The remaining work includes normal interactive Pi usage, explicit conflict
+resolution, original reference compatibility and complete product acceptance.
+Synthetic Core coverage and native Plugin acceptance remain separate. Local
+planning directories `doc/` and `docs/` are excluded from version control.
 
 ## Public development
 

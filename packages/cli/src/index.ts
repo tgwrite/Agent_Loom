@@ -1,21 +1,24 @@
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
 import type { ApplicationDefinition, SessionHost } from '../../container-core/src/index.ts';
 import { requireNativeIntegration } from '../../runtime-pi/src/index.ts';
 import { TaskCatalog } from './catalog.ts';
+import { readHostBinding, saveHostBinding } from './host-binding.ts';
 
 const help = `Agent Loom (development preview)
 
 loom app validate <application.ts> [--definition-only | --host-module <file>] [--json]
-loom task create --app <application.ts> --root <directory> --name <id> [--json]
+loom task create --app <application.ts> --root <directory> --name <id> [--host-module <file>] [--json]
 loom task inspect <id> [--root <directory>] [--json]
 loom session start --task <id> --profile <profile> [--root <directory>] [--workspace <relative>] [--dry-run | --host-module <file>] [--json]
 loom session inspect <id> --task <task-id> [--root <directory>] [--json]
 loom artifact inspect <id> --task <task-id> [--root <directory>] [--json]
 
-Built-in native Plugin bindings are not ready. A trusted local --host-module may
-provide createSessionHost({ store }) for native execution. Local Task indexing uses LOOM_STATE_DIR
+An application module may export nativeHost (a path relative to that module).
+Task creation saves this local binding; later Sessions need only Task and Profile.
+A trusted --host-module overrides it and provides createSessionHost({ store }).
+No built-in Plugin installation is performed. Local Task indexing uses LOOM_STATE_DIR
 when set. Use --root to locate a Task without that index.`;
 
 function argumentsFor(args: string[], allowed: readonly string[]) {
@@ -42,16 +45,21 @@ function argumentsFor(args: string[], allowed: readonly string[]) {
   };
 }
 
-async function loadApplication(file: string): Promise<ApplicationDefinition> {
+async function loadApplication(file: string): Promise<{ application: ApplicationDefinition; nativeHost?: string }> {
   let value: unknown;
+  let nativeHost: string | undefined;
   try {
     const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
     value = module.default ?? module.application;
+    if (module.nativeHost !== undefined) {
+      if (typeof module.nativeHost !== 'string' || !module.nativeHost.trim()) throw new Error();
+      nativeHost = resolve(dirname(resolve(file)), module.nativeHost);
+    }
   } catch {
     throw new ContainerFailure('InvalidDefinition', 'Unable to load Application module. Export the definition as default or application.');
   }
   validateApplication(value);
-  return value;
+  return { application: value, ...(nativeHost ? { nativeHost } : {}) };
 }
 
 async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHost> {
@@ -110,7 +118,7 @@ export async function main(args: string[]): Promise<number> {
     const command = args.slice(0, 2).join(' ');
     const allowed: Record<string, string[]> = {
       'app validate': ['--definition-only', '--host-module', '--json'],
-      'task create': ['--app', '--root', '--name', '--json'],
+      'task create': ['--app', '--root', '--name', '--host-module', '--json'],
       'task inspect': ['--root', '--json'],
       'session start': ['--task', '--profile', '--root', '--workspace', '--dry-run', '--host-module', '--json'],
       'session inspect': ['--task', '--root', '--json'],
@@ -124,10 +132,10 @@ export async function main(args: string[]): Promise<number> {
     }
     const json = options.flags.has('--json');
     if (command === 'app validate') {
-      const application = await loadApplication(options.positionals[0]!);
+      const { application, nativeHost } = await loadApplication(options.positionals[0]!);
       const definitionOnly = options.flags.has('--definition-only');
-      const hostModule = options.value('--host-module');
-      if (definitionOnly && hostModule) throw new ContainerFailure('InvalidArguments', 'Choose either --definition-only or --host-module.');
+      const hostModule = options.value('--host-module') ?? nativeHost;
+      if (definitionOnly && options.value('--host-module')) throw new ContainerFailure('InvalidArguments', 'Choose either --definition-only or --host-module.');
       if (!definitionOnly) {
         if (!hostModule) requireNativeIntegration();
         await validateNativeHost(hostModule, application);
@@ -138,12 +146,14 @@ export async function main(args: string[]): Promise<number> {
     }
     const catalog = new TaskCatalog();
     if (command === 'task create') {
-      const application = await loadApplication(options.required('--app'));
+      const { application, nativeHost } = await loadApplication(options.required('--app'));
       const id = options.required('--name');
       const root = options.required('--root');
       await catalog.ensureAvailable(id);
       const store = await LocalTaskStore.create(root, { schema_version: 2, id,
         application_id: application.id, application, title: id, created_at: new Date().toISOString() });
+      const hostModule = options.value('--host-module') ?? nativeHost;
+      if (hostModule) await saveHostBinding(store, resolve(hostModule));
       await catalog.register(store);
       output({ task: id, application: application.id, status: 'created', native_integration: 'not-verified' }, json);
       return 0;
@@ -157,8 +167,9 @@ export async function main(args: string[]): Promise<number> {
         throw new ContainerFailure('InvalidArguments', 'Choose either --dry-run or --host-module.');
       }
       if (!options.flags.has('--dry-run')) {
-        if (!hostModule) requireNativeIntegration();
-        const host = await loadHost(hostModule, store);
+        const selectedHost = hostModule ?? await readHostBinding(store);
+        if (!selectedHost) requireNativeIntegration();
+        const host = await loadHost(selectedHost, store);
         const session = await executeSession(store, plan, host, { id: 'local-operator' });
         output({ status: session.status, executed: true, session }, json);
         return session.status === 'completed' ? 0 : 1;

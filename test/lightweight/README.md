@@ -1,5 +1,9 @@
 # Lightweight native Plugin acceptance
 
+For the formal CLI path and a no-Loom control, see the
+[governance value experiment](GOVERNANCE.md). This older command remains a focused
+integration regression using the same reusable Host and domain adapters.
+
 Two Loom-managed Pi Sessions run three pinned public packages:
 
 | Profile | Primary package | Aspect package |

@@ -1,3 +1,4 @@
+export const nativeHost = './host.mjs';
 export const application = {
   id: 'web-report', version: '0.1.0', runtime: { id: 'pi', version: '0.85.1' },
   plugins: [

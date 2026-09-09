@@ -148,3 +148,31 @@ test('separate producer and consumer processes leave inspectable lineage in a sh
   assert.equal(JSON.parse(session.stdout).consumed.length, 1);
   assert.match(run(['task', 'inspect', 'task-one'], env, unrelated).stdout, /Consumed: artifact-one <- producer/);
 });
+
+test('Application host binding is captured once and reused after its definition is removed', async t => {
+  const { directory, taskRoot, unrelated, env } = await scratch(t);
+  const host = join(directory, 'bound-host.mjs');
+  await writeFile(host, `export async function validateNativeApplication() {}
+    export function createSessionHost() { return {
+      runtime: { id: 'synthetic', name: 'synthetic', version: '1' }, async validate() {},
+      async launch() { return { runtime_session_id: 'bound-native-session', async initialize() {},
+        async run() { return { status: 'completed' }; }, async close() {} }; }
+    }; }`);
+  const app = join(directory, 'bound.app.mjs');
+  await writeFile(app, `export { default } from ${JSON.stringify(pathToFileURL(application).href)};
+    export const nativeHost = './bound-host.mjs';`);
+  assert.equal(run(['app', 'validate', app, '--json'], env).status, 0);
+  assert.equal(run(['app', 'validate', app, '--definition-only', '--json'], env).status, 0);
+  assert.equal(run(['task', 'create', '--app', app, '--root', taskRoot, '--name', 'bound'], env).status, 0);
+  await rm(app);
+  const started = run(['session', 'start', '--task', 'bound', '--profile', 'test-profile', '--json'], env, unrelated);
+  assert.equal(started.status, 0, started.stderr);
+  assert.equal(JSON.parse(started.stdout).session.runtime_session_id, 'bound-native-session');
+  const fresh = { ...env, LOOM_STATE_DIR: join(directory, 'empty-index') };
+  const again = run(['session', 'start', '--task', 'bound', '--root', taskRoot,
+    '--profile', 'test-profile', '--json'], fresh, unrelated);
+  assert.equal(again.status, 0, again.stderr);
+  await writeFile(join(taskRoot, '.agent-loom', 'native-host.json'), '{broken');
+  const corrupt = run(['session', 'start', '--task', 'bound', '--profile', 'test-profile'], env);
+  assert.equal(JSON.parse(corrupt.stderr).error.code, 'NativeIntegrationNotReady');
+});

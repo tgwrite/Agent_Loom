@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 // Only model decisions are scripted. Pi's agent loop, extension hooks, tools,
 // filesystem, HTTP conversion, export and telemetry all execute normally.
-export async function installScriptedDecisions(session, profile, url) {
+export async function installScriptedDecisions(session, profile, url, exportFault = false) {
   const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai');
   let step = 0;
   session.agent.streamFunction = model => {
@@ -20,7 +20,7 @@ export async function installScriptedDecisions(session, profile, url) {
       }
       if (step === 3) {
         const scaffold = session.messages.findLast(m => m.role === 'toolResult' && m.toolName === 'scaffold_artifact');
-        call = { name: 'export_artifact', arguments: { id: scaffold.details.id } };
+        call = { name: 'export_artifact', arguments: { id: exportFault ? `missing-${randomUUID()}` : scaffold.details.id } };
       }
     }
     step++;
