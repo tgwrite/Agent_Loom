@@ -7,7 +7,7 @@ import { TaskCatalog } from './catalog.ts';
 
 const help = `Agent Loom (development preview)
 
-loom app validate <application.ts> [--definition-only] [--json]
+loom app validate <application.ts> [--definition-only | --host-module <file>] [--json]
 loom task create --app <application.ts> --root <directory> --name <id> [--json]
 loom task inspect <id> [--root <directory>] [--json]
 loom session start --task <id> --profile <profile> [--root <directory>] [--workspace <relative>] [--dry-run | --host-module <file>] [--json]
@@ -68,6 +68,16 @@ async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHos
   }
 }
 
+async function validateNativeHost(file: string, application: ApplicationDefinition): Promise<void> {
+  try {
+    const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
+    if (typeof module.validateNativeApplication !== 'function') throw new Error();
+    await module.validateNativeApplication({ application: structuredClone(application) });
+  } catch {
+    throw new ContainerFailure('NativeIntegrationNotReady', 'Local native Application preflight failed.');
+  }
+}
+
 function output(value: unknown, json: boolean): void {
   // JSON is also useful locally; the human renderer below emphasizes Task relationships.
   if (json || !value || typeof value !== 'object' || !('sessions' in value)) {
@@ -99,7 +109,7 @@ export async function main(args: string[]): Promise<number> {
     }
     const command = args.slice(0, 2).join(' ');
     const allowed: Record<string, string[]> = {
-      'app validate': ['--definition-only', '--json'],
+      'app validate': ['--definition-only', '--host-module', '--json'],
       'task create': ['--app', '--root', '--name', '--json'],
       'task inspect': ['--root', '--json'],
       'session start': ['--task', '--profile', '--root', '--workspace', '--dry-run', '--host-module', '--json'],
@@ -115,8 +125,14 @@ export async function main(args: string[]): Promise<number> {
     const json = options.flags.has('--json');
     if (command === 'app validate') {
       const application = await loadApplication(options.positionals[0]!);
-      if (!options.flags.has('--definition-only')) requireNativeIntegration();
-      output({ application: application.id, definition: 'valid', native_integration: 'not-verified',
+      const definitionOnly = options.flags.has('--definition-only');
+      const hostModule = options.value('--host-module');
+      if (definitionOnly && hostModule) throw new ContainerFailure('InvalidArguments', 'Choose either --definition-only or --host-module.');
+      if (!definitionOnly) {
+        if (!hostModule) requireNativeIntegration();
+        await validateNativeHost(hostModule, application);
+      }
+      output({ application: application.id, definition: 'valid', native_integration: definitionOnly ? 'not-verified' : 'host-preflight-passed',
         profiles: application.profiles.map((profile) => profile.id) }, json);
       return 0;
     }

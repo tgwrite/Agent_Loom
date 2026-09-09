@@ -64,6 +64,11 @@ successful initialization precedes Artifact consumption. Native Session IDs and
 terminal status are persisted. Host modules execute local code and belong outside
 version control when they contain private integration configuration.
 
+The same module can export `validateNativeApplication({ application })` for
+`app validate --host-module ./local/native-host.mjs`. This preflight should verify
+the local SDK and all Profile bindings without executing a domain task. Its output
+is explicitly `host-preflight-passed`; it is not an E2E acceptance result.
+
 Built-in domain initialization and Artifact publication adapters remain unfinished.
 Supplying a Host does not establish Plugin compatibility or complete v0.1 acceptance.
 

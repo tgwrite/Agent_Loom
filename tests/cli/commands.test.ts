@@ -38,6 +38,23 @@ test('CLI distinguishes definition validation from native integration readiness'
   assert.equal(run(['task', 'create', '--unknown'], env).status, 1);
 });
 
+test('Application native preflight requires an explicit validator and reports its limited scope', async t => {
+  const { directory, env } = await scratch(t);
+  const hostFile = join(directory, 'preflight.mjs');
+  await writeFile(hostFile, `export async function validateNativeApplication({ application }) {
+    if (application.id !== 'test-app') throw new Error('unexpected application');
+  }`);
+  const base = ['app', 'validate', application, '--host-module', hostFile, '--json'];
+  const valid = run(base, env);
+  assert.equal(valid.status, 0);
+  assert.equal(JSON.parse(valid.stdout).native_integration, 'host-preflight-passed');
+  assert.equal(JSON.parse(run([...base, '--definition-only'], env).stderr).error.code, 'InvalidArguments');
+  await writeFile(hostFile, 'export function createSessionHost() {}');
+  const unavailable = run(base, env);
+  assert.equal(unavailable.status, 1);
+  assert.equal(JSON.parse(unavailable.stderr).error.code, 'NativeIntegrationNotReady');
+});
+
 test('Tasks retain their definition and can be inspected from an unrelated working directory', async (t) => {
   const { directory, taskRoot, unrelated, env } = await scratch(t);
   const localApp = join(directory, 'temporary.app.mjs');
