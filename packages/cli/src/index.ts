@@ -98,7 +98,10 @@ function output(value: unknown, json: boolean): void {
     console.log(`\nSession: ${session.id}\nProfile: ${session.profile_id}\nWorkspace: ${session.workspace}`);
     console.log(`Runtime: ${session.runtime.name}@${session.runtime.version}\nActor: ${session.actor.id}\nStatus: ${session.status}`);
     console.log(`Primary: ${session.primary_plugin_id ?? '(none)'}\nAspects: ${session.aspect_plugin_ids.join(', ') || '(none)'}`);
-    for (const artifact of session.produced) console.log(`Produced: ${artifact.type}@${artifact.version} ${artifact.verification.status} (${artifact.id})`);
+    for (const artifact of session.produced) {
+      console.log(`Produced: ${artifact.type}@${artifact.version} ${artifact.verification.status} (${artifact.id})`);
+      if (artifact.producer_phase) console.log(`Native provenance: ${artifact.producer_phase} ${artifact.native_runtime_session_id}`);
+    }
     for (const consumption of session.consumed) console.log(`Consumed: ${consumption.artifact_id} <- ${consumption.producer.session_id}`);
     for (const [plugin, counts] of Object.entries(session.plugin_artifact_counts)) {
       for (const [type, count] of Object.entries(counts)) console.log(`Artifacts: ${plugin} ${type} = ${count}`);

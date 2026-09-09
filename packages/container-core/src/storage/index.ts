@@ -298,12 +298,21 @@ export class LocalTaskStore {
       'Artifact Contract is not declared by its producer in this Task.');
     requireRecord(artifact.executor.actor_id === session.actor.id
       && artifact.executor.runtime_id === session.runtime.id, 'Artifact executor does not match its Session.');
+    if (artifact.producer_phase !== undefined) {
+      requireRecord(artifact.native_runtime_session_id === session.runtime_session_id,
+        'Native Artifact identity does not match its producer Session.');
+      requireRecord(artifact.producer_phase === 'domain-run'
+        ? artifact.producer.plugin_id === session.primary_plugin_id
+        : session.aspect_plugin_ids.includes(artifact.producer.plugin_id), 'Artifact phase does not match its producer role.');
+    }
   }
 
   #ref(artifact: ArtifactRecord): ArtifactRef {
     return structuredClone({ id: artifact.id, task_id: artifact.task_id, type: artifact.type,
       version: artifact.version, payload_ref: artifact.payload_ref, sha256: artifact.sha256,
-      producer: artifact.producer, executor: artifact.executor, verification: artifact.verification });
+      producer: artifact.producer, executor: artifact.executor, verification: artifact.verification,
+      ...(artifact.producer_phase !== undefined ? { producer_phase: artifact.producer_phase,
+        native_runtime_session_id: artifact.native_runtime_session_id! } : {}) });
   }
 
   async #lines<T>(file: string, validate: (value: T) => void): Promise<T[]> {

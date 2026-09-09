@@ -14,7 +14,15 @@ export type PayloadRef =
   | { kind: 'file'; path: string }
   | { kind: 'inline'; value: JsonValue };
 
-export interface ArtifactRecord extends ArtifactContract {
+export type ArtifactProducerPhase = 'domain-run' | 'aspect-after-run';
+
+/** Both fields are present for V2 native publications, absent for legacy records. */
+export interface ArtifactNativeProvenance {
+  producer_phase?: ArtifactProducerPhase;
+  native_runtime_session_id?: string;
+}
+
+export interface ArtifactRecord extends ArtifactContract, ArtifactNativeProvenance {
   id: string;
   task_id: string;
   producer: {
@@ -29,7 +37,7 @@ export interface ArtifactRecord extends ArtifactContract {
   created_at: string;
 }
 
-export interface ArtifactRef extends ArtifactContract {
+export interface ArtifactRef extends ArtifactContract, ArtifactNativeProvenance {
   id: string;
   task_id: string;
   payload_ref: PayloadRef;

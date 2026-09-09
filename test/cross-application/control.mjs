@@ -102,6 +102,8 @@ try {
             assert(plugin.produces.some(contract => contract.type === p.type && contract.version === p.version));
             state.artifacts.push({ id: randomUUID(), task_id: taskId, type: p.type, version: p.version,
               producer: { plugin_id: plugin.id, capability_id: 'native-publication', session_id: id },
+              producer_phase: plugin.id === profile.primary ? 'domain-run' : 'aspect-after-run',
+              native_runtime_session_id: record.runtime_session_id,
               executor: { actor_id: record.actor.id, runtime_id: 'pi' }, verification: { status: p.verification_status },
               payload_ref: { kind: 'file', path: p.path }, sha256: sha256(await readFile(await containedFile(root, p.path))),
               created_at: new Date().toISOString() });

@@ -13,20 +13,22 @@ import { repo, freeze, integrationHashes, marketHashes } from './freeze.mjs';
 
 // Public CLI driver and evidence assertions only. It never writes governance.
 const args = process.argv.slice(2);
-const phase = args.find(a => a.startsWith('--phase='))?.split('=')[1] ?? 'a';
+const requestedPhase = args.find(a => a.startsWith('--phase='))?.split('=')[1] ?? 'a';
+const verify = requestedPhase === 'verify';
+const phase = verify ? 'm2' : requestedPhase;
 const smoke = args.includes('--smoke');
 assert(['a', 'm1', 'm2'].includes(phase));
-assert(args.every(a => a === '--smoke' || a === `--phase=${phase}`));
+assert(args.every(a => a === '--smoke' || a === `--phase=${requestedPhase}`));
 assert.equal(process.platform, 'win32', 'This optional native experiment validates Windows profile isolation');
 const outputBase = join(repo, '.test-tmp/cross-application');
 await mkdir(outputBase, { recursive: true });
 const initialFreeze = freeze(phase), integrations = await integrationHashes();
-if (phase !== 'a') {
+if (phase !== 'a' && !verify) {
   const previous = await readJson(join(outputBase, `checkpoint-${phase === 'm1' ? 'a' : 'm1'}.local.json`));
   assert.equal(previous.status, 'passed', 'Previous phase must pass before migration');
   assert.deepEqual(integrations, previous.integrations, 'Business integration changed during semantic migration');
 }
-const root = await mkdtemp(join(outputBase, `${phase}-`));
+const root = await mkdtemp(join(outputBase, `${requestedPhase}-`));
 const globalDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi/agent');
 async function globalHashes() {
   return Object.fromEntries(await Promise.all(['settings.json', 'auth.json', 'models.json', 'telemetry.json'].map(async name => {
@@ -150,9 +152,13 @@ async function scenario(arm, appKey, kind) {
     }
     assert.equal(review.requests.length, 3 * count);
     for (const previous of results) assert(!JSON.stringify(review.requests).includes(`INPUT_CANARY_${previous.task}`));
-    if (arm === 'loom' && phase !== 'a' && kind !== 'normal') {
+    if (arm === 'loom' && phase !== 'a' && (kind !== 'normal' || phase === 'm2')) {
       const human = await command(arm, 'inspect', task, undefined, 0, true);
       if (failuresPresent(kind)) assert(human.includes(kind === 'native-hook' ? 'native-hook' : kind === 'after-run' ? 'aspect-execution' : 'publication-validation'));
+      if (phase === 'm2') {
+        assert(human.includes('Native provenance: aspect-after-run'));
+        if (!domainFailure || count > 1) assert(human.includes('Native provenance: domain-run'));
+      }
     }
     results.push({ arm, application: appKey, scenario: kind, task: task.id, passed: true, sessions: count,
       artifacts: snapshot.artifacts.length, review_requests: review.requests.length, actual_llm_requests: 0 });
@@ -169,11 +175,11 @@ try {
   assert.deepEqual(await marketHashes(), before.market);
   assert.deepEqual(await integrationHashes(), integrations);
   freeze(phase);
-  const result = { status: 'passed', phase, smoke, results, freeze: initialFreeze, integrations, native_packages: before,
+  const result = { status: 'passed', phase: requestedPhase, smoke, results, freeze: initialFreeze, integrations, native_packages: before,
     global_pi_config_unchanged: true, native_packages_unchanged: true, commands: calls.length };
   await writeJson(join(root, 'result.local.json'), result);
-  if (!smoke) await writeJson(join(outputBase, `checkpoint-${phase}.local.json`), { ...result, output: relative(repo, root) });
-  console.log(JSON.stringify({ status: 'passed', phase, cases: results.length, output: relative(repo, root) }));
+  if (!smoke && !verify) await writeJson(join(outputBase, `checkpoint-${phase}.local.json`), { ...result, output: relative(repo, root) });
+  console.log(JSON.stringify({ status: 'passed', phase: requestedPhase, cases: results.length, output: relative(repo, root) }));
 } catch (error) {
   await writeFile(join(root, 'failure.local.txt'), String(error?.stack ?? error));
   await writeJson(join(root, 'partial.local.json'), results);

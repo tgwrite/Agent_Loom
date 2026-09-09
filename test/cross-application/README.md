@@ -41,7 +41,18 @@ the official portable 3.11 release. No global plugin or settings change is neede
 The native HTML exporter writes files with `open: false`. PDF, browser interaction
 and screenshots are not part of the experiment.
 
-## Sequential phases
+## Verify the current implementation
+
+```sh
+node test/cross-application/run.mjs --phase=verify --smoke
+node test/cross-application/run.mjs --phase=verify
+```
+
+Verification runs the final V2 assertions without requiring local historical
+checkpoints. It cannot recreate or claim the earlier migration/freeze evidence.
+The full mode runs thirty Task cases; smoke runs three normal Loom Tasks.
+
+## Sequential migration experiment
 
 ```sh
 node test/cross-application/run.mjs --phase=a --smoke
@@ -56,6 +67,9 @@ the observer-contract migration; M2 follows the provenance migration. Each full
 phase saves an ignored checkpoint. Later phases require the previous checkpoint
 and identical business integration hashes. Smoke output never satisfies that gate.
 The final source therefore cannot honestly rerun the production-frozen A phase.
+The first migration is preserved as commit `55c066e`. Reconstructing the original
+sequence requires an isolated checkout with the corresponding production/control
+source at each stage; do not overwrite an active development checkout to do this.
 
 Phase A checks all three applications in both arms with no Core, Runtime, CLI or
 previous-integration changes. Each migration runs normal execution, native-hook
@@ -84,4 +98,6 @@ Pi, plugins, tools, HTTP, local review-provider requests and files execute norma
 Model responses are deterministic fixtures. No real LLM reasoning, quality,
 performance, security sandbox or complete v0.1 acceptance is established here.
 
-See [HANDOFF.md](HANDOFF.md) for native domain contracts.
+See [HANDOFF.md](HANDOFF.md) for native domain contracts and
+[MIGRATIONS.md](MIGRATIONS.md) for failure/provenance compatibility semantics.
+The measured outcomes and comparative ledger are in [RESULT.md](RESULT.md).

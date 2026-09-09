@@ -86,6 +86,12 @@ export function validateArtifact(value: ArtifactRecord): void {
   text(value.type);
   text(value.version);
   text(value.verification.status);
+  if (value.producer_phase !== undefined || value.native_runtime_session_id !== undefined) {
+    requireRecord(value.producer_phase === 'domain-run' || value.producer_phase === 'aspect-after-run',
+      'Native publication phase is invalid.');
+    requireRecord(typeof value.native_runtime_session_id === 'string' && value.native_runtime_session_id.trim().length > 0,
+      'Native publication requires a native Session identity.');
+  }
   timestamp(value.created_at);
   requireRecord(typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256),
     'Artifact needs a lowercase SHA-256 digest.');

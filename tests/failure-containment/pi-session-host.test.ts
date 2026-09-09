@@ -109,6 +109,8 @@ test('Application host derives publication provenance and lifecycle from the act
   const [published] = await f.store.listArtifacts();
   assert.equal(published!.producer.session_id, result.id);
   assert.equal(published!.producer.plugin_id, 'test-domain');
+  assert.equal(published!.producer_phase, 'domain-run');
+  assert.equal(published!.native_runtime_session_id, result.runtime_session_id);
   assert.deepEqual(published!.executor, { actor_id: 'actual-operator', runtime_id: 'pi' });
   assert.equal(published!.sha256, createHash('sha256').update(bytes).digest('hex'));
   const events = await f.store.listEvents(result.id);
@@ -145,6 +147,8 @@ test('Application host contains two independent aspect failures and attributes s
   assert.equal(result.status, 'completed');
   const [artifact] = await f.store.listArtifacts();
   assert.equal(artifact!.producer.plugin_id, 'test-observer');
+  assert.equal(artifact!.producer_phase, 'aspect-after-run');
+  assert.equal(artifact!.native_runtime_session_id, result.runtime_session_id);
   assert.equal(artifact!.producer.session_id, result.id);
   const events = await f.store.listEvents(result.id);
   const failures = events.filter(e => e.type === 'observer.failed');

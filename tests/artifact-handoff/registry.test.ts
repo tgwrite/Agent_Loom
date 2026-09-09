@@ -58,3 +58,35 @@ test('inline metadata is supported and Task-relative references cannot escape', 
   await store.publishArtifact({ ...artifact(), payload_ref: { kind: 'inline', value: { synthetic: true } } });
   assert.deepEqual((await store.resolveArtifact(requirement)).payload_ref, { kind: 'inline', value: { synthetic: true } });
 });
+
+test('native provenance must match producer role and native Session and survives resolution', async t => {
+  const { root, store } = await fixture(t);
+  await store.startSession({ ...session(), runtime_session_id: 'native-producer' });
+  await assert.rejects(store.publishArtifact({ ...artifact(), producer_phase: 'domain-run' }), { code: 'InvalidRecord' });
+  await assert.rejects(store.publishArtifact({ ...artifact(), native_runtime_session_id: 'native-producer' }), { code: 'InvalidRecord' });
+  await assert.rejects(store.publishArtifact({ ...artifact(), producer_phase: 'domain-run', native_runtime_session_id: 'wrong-native' }),
+    { code: 'InvalidRecord' });
+  await assert.rejects(store.publishArtifact({ ...artifact(), producer_phase: 'aspect-after-run', native_runtime_session_id: 'native-producer' }),
+    { code: 'InvalidRecord' });
+  await store.publishArtifact({ ...artifact(), producer_phase: 'domain-run', native_runtime_session_id: 'native-producer' });
+  await store.settleSession('producer', 'completed', timestamp);
+  const reopened = await LocalTaskStore.open(root);
+  const resolved = await reopened.resolveArtifact(requirement);
+  assert.equal(resolved.producer_phase, 'domain-run');
+  assert.equal(resolved.native_runtime_session_id, 'native-producer');
+  assert.equal((await reopened.listArtifacts()).length, 1);
+});
+
+test('legacy artifacts remain readable without fabricated native provenance or storage rewrites', async t => {
+  const { root, store } = await fixture(t);
+  await store.startSession(session());
+  await store.publishArtifact(artifact());
+  const path = join(root, '.agent-loom/artifacts.jsonl');
+  const original = await readFile(path, 'utf8');
+  const reopened = await LocalTaskStore.open(root);
+  const reference = await reopened.resolveArtifact(requirement);
+  assert.equal(reference.producer_phase, undefined);
+  assert.equal(reference.native_runtime_session_id, undefined);
+  assert.equal((await reopened.listArtifacts())[0]!.producer_phase, undefined);
+  assert.equal(await readFile(path, 'utf8'), original);
+});

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { ContainerFailure, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
-import type { ArtifactRef, LocalTaskStore, ObserverFailureContext } from '../../container-core/src/index.ts';
+import type { ArtifactRef, ArtifactProducerPhase, LocalTaskStore, ObserverFailureContext } from '../../container-core/src/index.ts';
 import { createPiSessionHost } from './session-host.ts';
 import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
 
@@ -73,8 +73,11 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
   const rejection = async (event: string, context: PiSessionContext) => {
     try { await observe(event, context); } catch { /* preserve the native failure */ }
   };
-  const publish = async (context: PiSessionContext, pluginId: string, publications: readonly NativePublication[]) => {
+  const publish = async (context: PiSessionContext, pluginId: string, publications: readonly NativePublication[],
+    producerPhase: ArtifactProducerPhase) => {
     const producer = await store.getSession(context.session_id);
+    if (!producer.runtime_session_id) throw new ContainerFailure('InvalidRecord', 'Native producer Session identity is missing.');
+    const nativeSessionId = producer.runtime_session_id;
     // Validate and read the whole batch before registering any of it.
     const records = await Promise.all(publications.map(async publication => {
       const plugin = store.task.application.plugins.find(p => p.id === pluginId);
@@ -91,6 +94,7 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
       try { await store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
       type: publication.type, version: publication.version,
       producer: { plugin_id: pluginId, capability_id: 'native-publication', session_id: producer.id },
+      producer_phase: producerPhase, native_runtime_session_id: nativeSessionId,
       executor: { actor_id: producer.actor.id, runtime_id: producer.runtime.id },
       verification: { status: publication.verification_status }, payload_ref: { kind: 'file', path: publication.path },
       sha256: digest, created_at: new Date().toISOString() }); }
@@ -116,7 +120,7 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
       let domainError: unknown;
       try {
         const publications = await primary(context).run!(session, domainContext(context));
-        await publish(context, context.plan.primary_plugin_id!, publications);
+        await publish(context, context.plan.primary_plugin_id!, publications, 'domain-run');
       } catch (error) { outcome = 'failed'; domainError = error; await rejection('execution-rejected', context); }
       for (const pluginId of context.plan.aspect_plugin_ids) {
         const plugin = store.task.application.plugins.find(p => p.id === pluginId)!;
@@ -127,7 +131,7 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
         try {
           const publications = await adapter.afterRun(session, domainContext(context), outcome);
           failureClass = 'publication-validation';
-          await publish(context, pluginId, publications);
+          await publish(context, pluginId, publications, 'aspect-after-run');
         } catch {
           await writes; // A rejected governance write must not become an optional aspect failure.
           await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass));
