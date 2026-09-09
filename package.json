@@ -1,0 +1,22 @@
+{
+  "name": "agent-loom",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "description": "A minimal application and task governance container for existing Agent Plugins.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=24.12.0" },
+  "workspaces": ["packages/*", "adapters/*"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "privacy:check": "node scripts/privacy-check.mjs",
+    "privacy:history": "node scripts/privacy-check.mjs --history",
+    "check": "npm run typecheck && npm test && npm run privacy:check",
+    "demo": "node examples/c2-analysis-application/demo.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}
