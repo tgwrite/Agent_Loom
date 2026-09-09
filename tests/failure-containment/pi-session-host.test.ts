@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -77,7 +77,9 @@ test('Pi host binds a native ID, initializes before discovery and flushes shutdo
   assert.equal((await f.run()).status, 'completed');
   assert.deepEqual(f.order, ['allocate', 'initialize', 'load', 'create', 'bind', 'observe:started', 'run', 'shutdown', 'observe:shutdown', 'dispose']);
   assert.equal(f.loaderOptions().noExtensions, true);
-  assert.deepEqual(f.loaderOptions().additionalExtensionPaths, [f.options.bindings['test-domain']!.entry, f.options.bindings['test-observer']!.entry]);
+  assert.deepEqual(f.loaderOptions().additionalExtensionPaths, await Promise.all([
+    realpath(f.options.bindings['test-domain']!.entry), realpath(f.options.bindings['test-observer']!.entry),
+  ]));
   assert.deepEqual(f.loadedSettings(), { defaultModel: 'test-model' });
 });
 

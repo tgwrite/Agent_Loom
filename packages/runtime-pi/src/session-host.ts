@@ -77,6 +77,7 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
   const bindings = structuredClone(options.bindings);
   const settings = structuredClone(options.settings);
   const pathKey = (path: string) => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path);
+  const entryOwners = new Map<string, string>();
   // Package/resource discovery is controlled by the selected Profile only.
   for (const key of ['packages', 'extensions', 'skills', 'prompts', 'themes']) delete settings[key];
   async function validate(plan: SessionPlan): Promise<void> {
@@ -87,10 +88,12 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
       for (const id of plan.plugin_ids) {
         const binding = bindings[id];
         if (!binding || !isAbsolute(binding.entry) || !(await stat(binding.entry)).isFile()) throw unavailable();
+        entryOwners.set(pathKey(binding.entry), id);
         binding.entry = await realpath(binding.entry);
         const key = pathKey(binding.entry);
         if (entries.has(key)) throw unavailable();
         entries.add(key);
+        entryOwners.set(key, id);
         for (const prompt of binding.prompt_paths ?? []) {
           if (!isAbsolute(prompt) || !(await stat(prompt)).isDirectory()) throw unavailable();
         }
@@ -156,8 +159,8 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
             await session.bindExtensions({ mode: 'rpc', onError(error) {
               const nativePath = typeof error === 'object' && error !== null && 'extensionPath' in error
                 && typeof error.extensionPath === 'string' ? error.extensionPath : undefined;
-              const isAspect = nativePath !== undefined && context.plan.aspect_plugin_ids.some(id =>
-                pathKey(bindings[id]!.entry) === pathKey(nativePath));
+              const owner = nativePath === undefined ? undefined : entryOwners.get(pathKey(nativePath));
+              const isAspect = owner !== undefined && context.plan.aspect_plugin_ids.includes(owner);
               if (!isAspect) extensionFailed = true;
               void observe(isAspect ? 'aspect-error' : 'extension-error');
             } });
