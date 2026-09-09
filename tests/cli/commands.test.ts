@@ -80,6 +80,33 @@ test('missing dependencies and unready native execution leave no fabricated Sess
   assert.equal(JSON.parse(inspected.stdout).sessions.length, 0);
 });
 
+test('CLI loads an explicit local Host after preconditions and persists its native binding', async t => {
+  const { directory, taskRoot, env } = await scratch(t);
+  assert.equal(run(['task', 'create', '--app', application, '--root', taskRoot, '--name', 'task-one'], env).status, 0);
+  const hostFile = join(directory, 'synthetic-host.mjs');
+  await writeFile(hostFile, `export function createSessionHost() {
+    return { runtime: { id: 'synthetic', name: 'synthetic', version: '1' },
+      async validate() {}, async launch() {
+        return { runtime_session_id: 'synthetic-cli-session', async initialize() {},
+          async run() { return { status: 'completed' }; }, async close() {} };
+      } };
+  }`);
+  const base = ['session', 'start', '--task', 'task-one', '--profile', 'test-profile'];
+  const invalid = run([...base, '--host-module', hostFile, '--dry-run'], env);
+  assert.equal(JSON.parse(invalid.stderr).error.code, 'InvalidArguments');
+  const missing = run([...base, '--host-module', join(directory, 'missing.mjs')], env);
+  assert.equal(JSON.parse(missing.stderr).error.code, 'NativeIntegrationNotReady');
+  const precondition = run(['session', 'start', '--task', 'task-one', '--profile', 'test-consumer',
+    '--host-module', join(directory, 'missing.mjs')], env);
+  assert.equal(JSON.parse(precondition.stderr).error.code, 'PreconditionNotSatisfied');
+  const executed = run([...base, '--host-module', hostFile, '--json'], env);
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(JSON.parse(executed.stdout).session.runtime_session_id, 'synthetic-cli-session');
+  const snapshot = JSON.parse(run(['task', 'inspect', 'task-one', '--json'], env).stdout);
+  assert.equal(snapshot.sessions.length, 1);
+  assert.equal(snapshot.sessions[0].status, 'completed');
+});
+
 test('separate producer and consumer processes leave inspectable lineage in a shared Task', async (t) => {
   const { taskRoot, unrelated, env } = await scratch(t);
   assert.equal(run(['task', 'create', '--app', application, '--root', taskRoot, '--name', 'task-one'], env).status, 0);

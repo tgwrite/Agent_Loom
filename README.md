@@ -51,9 +51,21 @@ npm run loom -- session start --task example-task --profile c2forge --dry-run
 ```
 
 Application validation without `--definition-only` and Session startup without
-`--dry-run` currently fail with `NativeIntegrationNotReady`. These flags exercise
-definition validation and dependency planning only; they do not run native Plugins.
+`--dry-run` or a local Host currently fail with `NativeIntegrationNotReady`.
+`--definition-only` and `--dry-run` exercise validation and dependency planning only.
 A missing READY Handoff fails with `PreconditionNotSatisfied` before consumer execution.
+
+Integrators can supply `--host-module ./local/native-host.mjs` for Session startup.
+This trusted local module exports `createSessionHost({ store })` and returns a
+Core `SessionHost`. The `agent-loom/runtime-pi` export provides `createPiSessionHost`
+for an injected Pi SDK, explicit Plugin entries, a native initializer, and an
+execution driver. The initializer runs before Pi loads workspace instructions;
+successful initialization precedes Artifact consumption. Native Session IDs and
+terminal status are persisted. Host modules execute local code and belong outside
+version control when they contain private integration configuration.
+
+Built-in domain initialization and Artifact publication adapters remain unfinished.
+Supplying a Host does not establish Plugin compatibility or complete v0.1 acceptance.
 
 Task creation stores an Application snapshot. Later commands find the Task through a
 local index, independent of the current working directory or original definition file.
@@ -70,7 +82,7 @@ is local runtime data and must be reviewed before sharing publicly.
 
 ```text
 packages/container-core/       Runtime-independent contracts and local governance
-packages/runtime-pi/           Pi integration boundary; implementation pending
+packages/runtime-pi/           Pi Session lifecycle bridge with injected native bindings
 packages/cli/                  Application validation, Task lookup and inspection
 adapters/                     Thin reference Plugin descriptors
 examples/c2-analysis-application/
@@ -92,20 +104,20 @@ scripts/                      Test runner and publication checks
 - v0.1 targets Pi only while keeping Core contracts independent of Pi.
 
 The current store assumes one writer per Task and trusted local filesystem ownership.
-Crash recovery, Pi event mapping, actual Plugin loading, and sidecar behavior are not
-implemented. Callers must serialize mutations; multi-file transactions and recovery
-are not yet supported.
+Crash recovery and complete sidecar verification remain pending. The Pi bridge
+loads explicit Profile entries and exposes lifecycle observations to the local Host.
+Callers must serialize mutations; multi-file transactions and recovery are not yet
+supported. Pi session files use `.agent-loom/native-sessions/`, separate from Core records.
 
 The current Task schema is version 2. Legacy `.agent-container/` data is detected and
 rejected explicitly; automatic migration is not implemented. No existing Task or
-domain data is overwritten. The Session service is tested with an injected synthetic
-Host; the real Pi Bridge and native initialization adapters remain pending.
+domain data is overwritten. Public bridge tests use an injected synthetic SDK;
+native domain initialization and publication still require local integration.
 
 ## Iterating toward v0.1
 
-The next step is real Pi compatibility verification, followed by Runtime bridging,
-native Artifact publication and initialization, automatic Profile loading, observer
-isolation, and a complete real E2E run. Synthetic Core coverage and real Plugin
+The next steps are native Artifact publication and initialization, full compatibility
+verification, observer isolation, and a complete real E2E run. Synthetic Core coverage and real Plugin
 acceptance remain separate. Local planning directories `doc/` and `docs/` are excluded
 from version control.
 

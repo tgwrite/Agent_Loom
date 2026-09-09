@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/packages/container-core/src/index.d.ts",
       "import": "./dist/packages/container-core/src/index.js"
+    },
+    "./runtime-pi": {
+      "types": "./dist/packages/runtime-pi/src/index.d.ts",
+      "import": "./dist/packages/runtime-pi/src/index.js"
     }
   },
   "engines": { "node": ">=24.12.0" },

@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ContainerFailure, LocalTaskStore, inspectTask, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
-import type { ApplicationDefinition } from '../../container-core/src/index.ts';
+import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
+import type { ApplicationDefinition, SessionHost } from '../../container-core/src/index.ts';
 import { requireNativeIntegration } from '../../runtime-pi/src/index.ts';
 import { TaskCatalog } from './catalog.ts';
 
@@ -10,12 +10,12 @@ const help = `Agent Loom (development preview)
 loom app validate <application.ts> [--definition-only] [--json]
 loom task create --app <application.ts> --root <directory> --name <id> [--json]
 loom task inspect <id> [--root <directory>] [--json]
-loom session start --task <id> --profile <profile> [--root <directory>] [--workspace <relative>] [--dry-run] [--json]
+loom session start --task <id> --profile <profile> [--root <directory>] [--workspace <relative>] [--dry-run | --host-module <file>] [--json]
 loom session inspect <id> --task <task-id> [--root <directory>] [--json]
 loom artifact inspect <id> --task <task-id> [--root <directory>] [--json]
 
-Native Pi execution is not ready. Definition validation and dry-run plans are
-explicitly separate from real execution. Local Task indexing uses LOOM_STATE_DIR
+Built-in native Plugin bindings are not ready. A trusted local --host-module may
+provide createSessionHost({ store }) for native execution. Local Task indexing uses LOOM_STATE_DIR
 when set. Use --root to locate a Task without that index.`;
 
 function argumentsFor(args: string[], allowed: readonly string[]) {
@@ -54,6 +54,20 @@ async function loadApplication(file: string): Promise<ApplicationDefinition> {
   return value;
 }
 
+async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHost> {
+  try {
+    const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
+    if (typeof module.createSessionHost !== 'function') throw new Error();
+    const host: SessionHost = await module.createSessionHost({ store });
+    if (!host || typeof host.validate !== 'function' || typeof host.launch !== 'function'
+      || !host.runtime || typeof host.runtime.id !== 'string' || typeof host.runtime.name !== 'string'
+      || typeof host.runtime.version !== 'string') throw new Error();
+    return host;
+  } catch {
+    throw new ContainerFailure('NativeIntegrationNotReady', 'Unable to load the local native Session Host.');
+  }
+}
+
 function output(value: unknown, json: boolean): void {
   // JSON is also useful locally; the human renderer below emphasizes Task relationships.
   if (json || !value || typeof value !== 'object' || !('sessions' in value)) {
@@ -88,7 +102,7 @@ export async function main(args: string[]): Promise<number> {
       'app validate': ['--definition-only', '--json'],
       'task create': ['--app', '--root', '--name', '--json'],
       'task inspect': ['--root', '--json'],
-      'session start': ['--task', '--profile', '--root', '--workspace', '--dry-run', '--json'],
+      'session start': ['--task', '--profile', '--root', '--workspace', '--dry-run', '--host-module', '--json'],
       'session inspect': ['--task', '--root', '--json'],
       'artifact inspect': ['--task', '--root', '--json'],
     };
@@ -122,7 +136,17 @@ export async function main(args: string[]): Promise<number> {
     const store = await catalog.open(taskId, options.value('--root'));
     if (command === 'session start') {
       const plan = await prepareSession(store, options.required('--profile'), options.value('--workspace'));
-      if (!options.flags.has('--dry-run')) requireNativeIntegration();
+      const hostModule = options.value('--host-module');
+      if (hostModule && options.flags.has('--dry-run')) {
+        throw new ContainerFailure('InvalidArguments', 'Choose either --dry-run or --host-module.');
+      }
+      if (!options.flags.has('--dry-run')) {
+        if (!hostModule) requireNativeIntegration();
+        const host = await loadHost(hostModule, store);
+        const session = await executeSession(store, plan, host, { id: 'local-operator' });
+        output({ status: session.status, executed: true, session }, json);
+        return session.status === 'completed' ? 0 : 1;
+      }
       output({ status: 'planned', executed: false, native_integration: 'not-verified', ...plan }, json);
       return 0;
     }
