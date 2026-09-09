@@ -5,4 +5,5 @@ export const c2forgeProfile: SessionProfile = {
   primary: 'c2forge',
   aspects: ['postmortem'],
   requirements: [],
+  workspace: '.',
 };

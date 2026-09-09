@@ -32,8 +32,8 @@ test('invalid identifiers cannot escape the Session index', async (t) => {
 
 test('truncated and malformed persisted data fail closed', async (t) => {
   const { root, store } = await fixture(t);
-  await appendFile(join(root, '.agent-container', 'artifacts.jsonl'), '{');
+  await appendFile(join(root, '.agent-loom', 'artifacts.jsonl'), '{');
   await assert.rejects(store.resolveArtifact(requirement), { code: 'StorageFailure' });
-  await writeFile(join(root, '.agent-container', 'task.json'), JSON.stringify({ schema_version: 99 }));
+  await writeFile(join(root, '.agent-loom', 'task.json'), JSON.stringify({ schema_version: 99 }));
   await assert.rejects(LocalTaskStore.open(root), { code: 'StorageFailure' });
 });

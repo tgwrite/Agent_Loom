@@ -34,4 +34,18 @@ export interface ArtifactRef extends ArtifactContract {
   task_id: string;
   payload_ref: PayloadRef;
   sha256: string;
+  producer: ArtifactRecord['producer'];
+  executor: ArtifactRecord['executor'];
+  verification: ArtifactRecord['verification'];
+}
+
+/** A consumer-reported successful initialization, not a registry lookup. */
+export interface ArtifactConsumptionRecord {
+  id: string;
+  task_id: string;
+  session_id: string;
+  consumer_plugin_id: string;
+  artifact_id: string;
+  sha256: string;
+  consumed_at: string;
 }

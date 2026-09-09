@@ -5,11 +5,21 @@
   "description": "A minimal application and task governance container for existing Agent Plugins.",
   "license": "Apache-2.0",
   "type": "module",
+  "bin": { "loom": "./bin/loom.mjs" },
+  "files": ["bin/", "dist/", "README.md", "LICENSE", "NOTICE"],
+  "exports": {
+    ".": {
+      "types": "./dist/packages/container-core/src/index.d.ts",
+      "import": "./dist/packages/container-core/src/index.js"
+    }
+  },
   "engines": { "node": ">=24.12.0" },
   "workspaces": ["packages/*", "adapters/*"],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "loom": "node bin/loom.mjs",
+    "test": "npm run build && node scripts/test.mjs",
     "privacy:check": "node scripts/privacy-check.mjs",
     "privacy:history": "node scripts/privacy-check.mjs --history",
     "check": "npm run typecheck && npm test && npm run privacy:check",

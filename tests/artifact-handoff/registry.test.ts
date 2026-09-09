@@ -18,7 +18,7 @@ test('a new store resolves the original reference after producer Session exit', 
   assert.equal(resolved.sha256, original.sha256);
   assert.equal((await consumer.listArtifacts())[0]?.producer.session_id, 'producer');
   assert.equal((await consumer.listSessions()).length, 2);
-  assert.match(await readFile(join(root, '.agent-container', 'artifacts.jsonl'), 'utf8'), /artifact-one/);
+  assert.match(await readFile(join(root, '.agent-loom', 'artifacts.jsonl'), 'utf8'), /artifact-one/);
 });
 
 test('missing, non-READY and different-version dependencies do not create Sessions', async (t) => {

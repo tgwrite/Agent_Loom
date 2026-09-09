@@ -6,4 +6,5 @@ export const c2decoderProfile: SessionProfile = {
   primary: 'c2decoder',
   aspects: ['postmortem'],
   requirements: [decoderHandoffRequirement],
+  workspace: 'decoder-workspace',
 };

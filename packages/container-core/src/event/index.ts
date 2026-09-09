@@ -7,7 +7,9 @@ export type CoreEventType =
   | 'capability.started'
   | 'capability.completed'
   | 'capability.failed'
-  | 'artifact.published';
+  | 'artifact.published'
+  | 'artifact.consumed'
+  | 'observer.failed';
 
 export interface EventEnvelope {
   id: string;

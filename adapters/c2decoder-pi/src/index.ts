@@ -5,11 +5,12 @@ export const c2decoder: PluginDescriptor = {
   role: 'domain',
   native: { runtime: 'pi', binding_key: 'c2decoder' },
   capabilities: [],
+  produces: [],
 };
 
 // This describes the baseline requirement; native schema mapping awaits Phase 0.
 export const decoderHandoffRequirement: ArtifactRequirement = {
-  type: 'DecoderHandoffView',
+  type: 'c2forge.decoder-handoff',
   version: '3',
   verification_status: 'READY',
 };

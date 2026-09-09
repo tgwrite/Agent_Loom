@@ -11,3 +11,5 @@ export * from './runtime.ts';
 export * from './session/index.ts';
 export * from './storage/index.ts';
 export * from './task/index.ts';
+export * from './paths.ts';
+export * from './governance.ts';

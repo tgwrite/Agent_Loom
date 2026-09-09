@@ -53,7 +53,12 @@ without access to local planning documents.
   Only explicit effects may change that context. Observer failures must be contained.
 - Keep `container-core` independent of Pi. Abstract only the Host surface actually
   required by reference Plugins. Pi 0.85.1 is a proposed target until Phase 0 passes.
-- Keep governance under `.agent-container/`; do not take ownership of domain folders.
+- Keep governance under `.agent-loom/`; do not take ownership of domain folders.
+  Legacy `.agent-container/` stores require explicit migration; never silently split a Task.
+- Tasks retain an Application snapshot. Session workspaces are Task-relative.
+  Record Artifact consumption only after a consumer reports successful initialization;
+  resolving a reference alone is not consumption. Keep native integration readiness
+  distinct from static Application validation.
 - Do not add workflow scheduling, planners, multi-agent orchestration, databases,
   permission engines, marketplaces, other Runtime adapters, or Web UI in v0.1.
 - Public synthetic tests demonstrate Core behavior only. Never label them as real

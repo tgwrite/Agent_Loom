@@ -47,7 +47,7 @@ export function inspectText(content, privateTerms = []) {
 
 export function inspectPath(path) {
   const normalized = path.replaceAll('\\', '/');
-  if (/(?:^|\/)(?:node_modules|dist|coverage|local|private|vendor|tmp|\.git|\.agents|\.codex|\.codex-tmp|\.test-tmp|\.agent-container|\.c2forge|\.c2decoder|\.agent-postmortem)(?:\/|$)/i.test(normalized)
+  if (/(?:^|\/)(?:node_modules|dist|coverage|local|private|vendor|tmp|\.git|\.agents|\.codex|\.codex-tmp|\.test-tmp|\.agent-container|\.agent-loom|\.c2forge|\.c2decoder|\.agent-postmortem)(?:\/|$)/i.test(normalized)
     || /(?:^|\/)\.env(?:\.|$)/i.test(normalized)
     || /(?:\.local\.[^/]+|\.(?:log|pem|key|p12|pfx))$/i.test(normalized)) {
     return ['private or generated file'];

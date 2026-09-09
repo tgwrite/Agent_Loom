@@ -11,6 +11,7 @@ test('publication rules detect synthetic private paths, credentials and unreview
   assert.ok(inspectText(token).includes('credential pattern'));
   assert.ok(inspectPath('local/reference-baseline.local.json').length > 0);
   assert.ok(inspectPath('.agent-container/task.json').length > 0);
+  assert.ok(inspectPath('.agent-loom/task.json').length > 0);
 });
 
 test('public relative references and neutral project email pass', () => {

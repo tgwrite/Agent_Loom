@@ -1,5 +1,7 @@
-import { posix, win32 } from 'node:path';
-import type { ArtifactRecord } from '../artifact/index.ts';
+import type { ArtifactRecord, ArtifactConsumptionRecord } from '../artifact/index.ts';
+import { validateApplication } from '../application/index.ts';
+import { taskRelativePath } from '../paths.ts';
+import type { FailureRecord } from '../failure/index.ts';
 import type { EventEnvelope } from '../event/index.ts';
 import { ContainerFailure } from '../failure/index.ts';
 import type { SessionRunRecord } from '../session/index.ts';
@@ -35,9 +37,11 @@ function jsonValue(value: unknown, seen = new Set<object>()): void {
 }
 
 export function validateTask(value: TaskRecord): void {
-  requireRecord(value.schema_version === 1, 'Unsupported Task schema version.');
+  requireRecord(value.schema_version === 2, 'Unsupported Task schema version.');
   identifier(value.id);
   identifier(value.application_id);
+  validateApplication(value.application);
+  requireRecord(value.application.id === value.application_id, 'Task Application identity does not match its snapshot.');
   text(value.title);
   timestamp(value.created_at);
 }
@@ -53,9 +57,20 @@ export function validateSession(value: SessionRunRecord): void {
   if (value.runtime_session_id !== undefined) text(value.runtime_session_id);
   requireRecord(Array.isArray(value.plugin_ids), 'Session Plugins must be an array.');
   value.plugin_ids.forEach(identifier);
+  taskRelativePath(value.workspace, true);
+  requireRecord(!/^\.agent-(?:loom|container)(?:\/|$)/i.test(value.workspace), 'Workspace cannot use the governance directory.');
+  requireRecord(Array.isArray(value.aspect_plugin_ids), 'Session aspects must be an array.');
+  value.aspect_plugin_ids.forEach(identifier);
+  if (value.primary_plugin_id !== undefined) identifier(value.primary_plugin_id);
+  const composed = [...(value.primary_plugin_id ? [value.primary_plugin_id] : []), ...value.aspect_plugin_ids];
+  requireRecord(JSON.stringify(composed) === JSON.stringify(value.plugin_ids), 'Session Plugin roles do not match its composition.');
   requireRecord(new Set(value.plugin_ids).size === value.plugin_ids.length, 'Duplicate Session Plugin.');
   requireRecord(['running', 'completed', 'failed'].includes(value.status), 'Invalid Session status.');
   timestamp(value.started_at);
+  if (value.failure !== undefined) {
+    validateFailure(value.failure);
+    requireRecord(value.status === 'failed', 'Only a failed Session may contain a Session failure.');
+  }
   if (value.status === 'running') {
     requireRecord(value.finished_at === undefined, 'Running Session cannot have a finish timestamp.');
   } else {
@@ -75,12 +90,7 @@ export function validateArtifact(value: ArtifactRecord): void {
   requireRecord(typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256),
     'Artifact needs a lowercase SHA-256 digest.');
   if (value.payload_ref.kind === 'file') {
-    const path = value.payload_ref.path;
-    text(path);
-    requireRecord(!posix.isAbsolute(path) && !win32.isAbsolute(path)
-      && !path.includes('\\') && !path.includes(':') && !/[\x00-\x1f]/.test(path)
-      && path.split('/').every((part) => part !== '..' && part !== '.' && part !== ''),
-    'Artifact file reference must be relative to the Task root.');
+    taskRelativePath(value.payload_ref.path);
   } else {
     requireRecord(value.payload_ref.kind === 'inline', 'Unsupported Artifact payload reference.');
     jsonValue(value.payload_ref.value);
@@ -93,7 +103,21 @@ export function validateEvent(value: EventEnvelope): void {
   timestamp(value.timestamp);
   requireRecord(typeof value.type === 'string' && (
     /^(session|capability)\.(started|completed|failed)$/.test(value.type)
-    || value.type === 'artifact.published' || /^runtime\.[a-z][a-z0-9_.-]*$/.test(value.type)
+    || value.type === 'artifact.published' || value.type === 'artifact.consumed'
+    || value.type === 'observer.failed' || /^runtime\.[a-z][a-z0-9_.-]*$/.test(value.type)
   ), 'Unsupported Event type.');
   jsonValue(value.payload);
+}
+
+export function validateConsumption(value: ArtifactConsumptionRecord): void {
+  [value.id, value.task_id, value.session_id, value.consumer_plugin_id, value.artifact_id].forEach(identifier);
+  requireRecord(typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256), 'Consumption needs the accepted Artifact digest.');
+  timestamp(value.consumed_at);
+}
+
+export function validateFailure(value: FailureRecord): void {
+  text(value.code);
+  text(value.message);
+  text(value.source);
+  timestamp(value.timestamp);
 }

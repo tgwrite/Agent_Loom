@@ -22,6 +22,7 @@ vendor/
 /doc/
 /docs/
 .agent-container/
+.agent-loom/
 .c2forge/
 .c2decoder/
 .agent-postmortem/

@@ -15,7 +15,7 @@ C2Decoder Session consuming that Artifact within the same Task. Postmortem is a
 cross-cutting observer in both Sessions. Plugin implementations retain ownership of
 domain verification, tools, guards, and reflection.
 
-**Status: initial scaffold with a tested local Core foundation.** Real Plugin
+**Status: Core governance and an initial CLI are implemented.** Real Plugin
 compatibility and the complete v0.1 loop are pending. The Pi 0.85.1 reference target
 comes from the design baseline and has not been validated by this repository.
 
@@ -27,22 +27,51 @@ Use Node.js 24.12 or newer and npm:
 npm ci
 npm run check
 npm run demo
+npm run loom -- --help
 ```
 
 The demo uses synthetic data, creates two Session records, publishes an Artifact
-reference, reopens the Task store, and resolves that reference for the second Session.
+reference, reopens the Task store, and records a simulated successful consumption.
 It prints a neutral summary and removes its temporary files. No Plugins, model keys,
 private repositories, or Pi installation are required.
 
-TypeScript runs through Node's native type stripping; `npm run typecheck` checks types
-separately. See the [Node.js documentation](https://nodejs.org/api/typescript.html).
-Packages are workspace-only and are not yet published to a package registry.
+`npm run check` builds JavaScript and declarations for the CLI and checks types
+separately. Local Application files may use Node's native TypeScript support; see
+the [Node.js documentation](https://nodejs.org/api/typescript.html).
+After `npm run build`, `npm link` optionally exposes the `loom` command locally.
+No package has been published to a registry.
+
+## CLI development preview
+
+```sh
+npm run loom -- app validate ./examples/c2-analysis-application/agent-loom.app.ts --definition-only
+npm run loom -- task create --app ./examples/c2-analysis-application/agent-loom.app.ts --root ./local/example-task --name example-task
+npm run loom -- task inspect example-task
+npm run loom -- session start --task example-task --profile c2forge --dry-run
+```
+
+Application validation without `--definition-only` and Session startup without
+`--dry-run` currently fail with `NativeIntegrationNotReady`. These flags exercise
+definition validation and dependency planning only; they do not run native Plugins.
+A missing READY Handoff fails with `PreconditionNotSatisfied` before consumer execution.
+
+Task creation stores an Application snapshot. Later commands find the Task through a
+local index, independent of the current working directory or original definition file.
+Set `LOOM_STATE_DIR` to choose the index directory, or supply `--root` when inspecting
+or starting an existing Task. Task names must be unique within an index.
+
+`task inspect`, `session inspect <id> --task <task-id>`, and
+`artifact inspect <id> --task <task-id>` accept `--json`. They expose production and
+successful consumption, Session workspaces, failures, Events, and per-Plugin Artifact
+counts. Artifact inspection resolves the original file location locally. Such output
+is local runtime data and must be reviewed before sharing publicly.
 
 ## Repository layout
 
 ```text
 packages/container-core/       Runtime-independent contracts and local governance
 packages/runtime-pi/           Pi integration boundary; implementation pending
+packages/cli/                  Application validation, Task lookup and inspection
 adapters/                     Thin reference Plugin descriptors
 examples/c2-analysis-application/
 tests/                        Synthetic behavior and boundary checks
@@ -56,13 +85,21 @@ scripts/                      Test runner and publication checks
 - Missing dependencies fail explicitly; resolving a dependency never starts a Plugin.
 - Plugins verify domain truth. The Container records their verification metadata.
 - Governance records and Plugin private state do not implicitly enter Agent Context.
-- Storage uses `.agent-container/` JSON and JSONL files, without a database.
+- Storage uses `.agent-loom/` JSON and JSONL files, without a database.
+- Tasks keep Application snapshots; Sessions have separate Task-relative workspaces.
+- A successful consumer initialization records the exact Artifact and accepted digest.
+  Lookup alone never records consumption. Core trusts the consumer's report of acceptance.
 - v0.1 targets Pi only while keeping Core contracts independent of Pi.
 
 The current store assumes one writer per Task and trusted local filesystem ownership.
 Crash recovery, Pi event mapping, actual Plugin loading, and sidecar behavior are not
 implemented. Callers must serialize mutations; multi-file transactions and recovery
 are not yet supported.
+
+The current Task schema is version 2. Legacy `.agent-container/` data is detected and
+rejected explicitly; automatic migration is not implemented. No existing Task or
+domain data is overwritten. The Session service is tested with an injected synthetic
+Host; the real Pi Bridge and native initialization adapters remain pending.
 
 ## Iterating toward v0.1
 

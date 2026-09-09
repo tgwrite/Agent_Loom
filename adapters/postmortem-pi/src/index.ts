@@ -5,4 +5,8 @@ export const postmortem: PluginDescriptor = {
   role: 'aspect',
   native: { runtime: 'pi', binding_key: 'postmortem' },
   capabilities: [],
+  produces: [
+    { type: 'postmortem.checkpoint', version: '1' },
+    { type: 'postmortem.report', version: '1' },
+  ],
 };
