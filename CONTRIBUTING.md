@@ -1,7 +1,8 @@
 # Contributing
 
-Read `AGENTS.md` and the implementation baseline before making changes.
-Keep each change tied to one roadmap step and record its actual validation scope.
+Read `AGENTS.md` before making changes. Consult local planning documents when
+available, but keep `doc/` and `docs/` excluded from version control.
+Keep each change tied to one implementation step and record its actual validation scope.
 
 ```sh
 npm ci

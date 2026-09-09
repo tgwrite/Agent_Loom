@@ -19,6 +19,8 @@ tmp/
 local/
 private/
 vendor/
+/doc/
+/docs/
 .agent-container/
 .c2forge/
 .c2decoder/

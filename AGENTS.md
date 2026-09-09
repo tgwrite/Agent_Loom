@@ -18,6 +18,8 @@ committer metadata, branches, tags, issues, pull requests, releases, and CI outp
 - Keep real Plugin checkouts, revision pins, case data, Handoffs, runtime events,
   reports, and local configuration outside version control. `.gitignore` is a first
   barrier, not a substitute for reviewing staged content and reachable history.
+- Root `doc/` and `docs/` are local-only, ignored planning directories. Preserve
+  local files, but never stage, force-add, or publish these directories again.
 - Do not copy raw local output into public documents, issues, commits, or CI fixtures.
   Publish only reviewed, anonymized results. Public CI must need no private access.
 - Use the project identity `Agent Loom contributors <contributors@example.invalid>`
@@ -35,8 +37,10 @@ committer metadata, branches, tags, issues, pull requests, releases, and CI outp
 
 ## Implementation baseline
 
-Read `doc/Agent Plugin Application Container v0.1 实施基线.md` before changing scope.
-Track progress and evidence in `docs/ROADMAP.md` and `docs/ACCEPTANCE.md`.
+When available locally, read the implementation baseline in `doc/` before changing
+scope and track progress in `docs/`. These directories are excluded from publication.
+Public contributors can use the boundaries below and the status in `README.md`
+without access to local planning documents.
 
 - Existing Plugin first: use native Pi Plugins with thin descriptors/adapters. Do not
   restructure domain cores or reflection logic to satisfy Container interfaces.

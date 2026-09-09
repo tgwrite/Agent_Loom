@@ -1,5 +1,12 @@
 # Agent Loom
 
+> **Work in progress / 开发中**
+>
+> 本项目尚未开发完成，v0.1 完整闭环尚未通过验收。当前仅提供项目骨架与部分 Core 基础能力。
+>
+> This project is still under development. The complete v0.1 flow has not passed
+> acceptance. The current implementation provides a scaffold and partial Core functionality.
+
 Agent Loom organizes existing Agent Plugins into an Application and connects their
 Sessions through a shared Task, Artifact registry, and Event history.
 
@@ -39,8 +46,6 @@ packages/runtime-pi/           Pi integration boundary; implementation pending
 adapters/                     Thin reference Plugin descriptors
 examples/c2-analysis-application/
 tests/                        Synthetic behavior and boundary checks
-docs/                         Architecture, baseline, roadmap, acceptance evidence
-doc/                          Original v0.1 implementation baseline
 scripts/                      Test runner and publication checks
 ```
 
@@ -56,14 +61,16 @@ scripts/                      Test runner and publication checks
 
 The current store assumes one writer per Task and trusted local filesystem ownership.
 Crash recovery, Pi event mapping, actual Plugin loading, and sidecar behavior are not
-implemented. Read the [architecture](docs/ARCHITECTURE.md) for the concrete limits.
+implemented. Callers must serialize mutations; multi-file transactions and recovery
+are not yet supported.
 
 ## Iterating toward v0.1
 
-Start with the [implementation baseline](doc/Agent%20Plugin%20Application%20Container%20v0.1%20实施基线.md),
-then use the [roadmap](docs/ROADMAP.md), [reference baseline](docs/REFERENCE_BASELINE.md),
-and [acceptance matrix](docs/ACCEPTANCE.md). Synthetic Core coverage and real Plugin
-acceptance are tracked separately.
+The next step is real Pi compatibility verification, followed by Runtime bridging,
+native Artifact publication and initialization, automatic Profile loading, observer
+isolation, and a complete real E2E run. Synthetic Core coverage and real Plugin
+acceptance remain separate. Local planning directories `doc/` and `docs/` are excluded
+from version control.
 
 ## Public development
 
