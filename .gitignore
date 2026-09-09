@@ -26,6 +26,7 @@ vendor/
 .c2forge/
 .c2decoder/
 .agent-postmortem/
+.pi-session-audit/
 *.pem
 *.key
 *.p12

@@ -152,6 +152,11 @@ scoped review inputs, main-context isolation and actual load-order reversal. A
 no-Loom control uses the same adapters; the change ledger includes both shared
 Host work and test infrastructure. Its runner currently validates Windows only.
 
+The [fifth-plugin reuse experiment](test/reuse/README.md) freezes the Core, Runtime,
+CLI and existing integrations at `44fd7f2`, then adds a test-local native session
+audit aspect. It measures inherited governance and marginal changes against the
+original control, including audit execution after domain failure.
+
 The remaining work includes normal interactive Pi usage, explicit conflict
 resolution, original reference compatibility and complete product acceptance.
 Synthetic Core coverage and native Plugin acceptance remain separate. Local
