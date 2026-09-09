@@ -104,6 +104,7 @@ adapters/                     Thin reference Plugin descriptors
 examples/c2-analysis-application/
 tests/                        Synthetic behavior and boundary checks
 test/lightweight/             Optional native Pi Plugin closure and test Handoff protocol
+test/composite/               Optional four-Plugin governance experiment and control
 scripts/                      Test runner and publication checks
 ```
 
@@ -144,6 +145,12 @@ The [governance experiment](test/lightweight/GOVERNANCE.md) uses the formal CLI,
 checks reuse and failure boundaries, and compares a no-Loom control using the same
 domain adapters. It separates reusable governance ownership from per-task manual
 steps and makes no model-speed claim.
+
+The [four-Plugin experiment](test/composite/README.md) adds conversation review as a
+second aspect. It checks native review provenance, separate aspect failure records,
+scoped review inputs, main-context isolation and actual load-order reversal. A
+no-Loom control uses the same adapters; the change ledger includes both shared
+Host work and test infrastructure. Its runner currently validates Windows only.
 
 The remaining work includes normal interactive Pi usage, explicit conflict
 resolution, original reference compatibility and complete product acceptance.

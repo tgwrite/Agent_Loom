@@ -35,6 +35,13 @@ export interface PiSessionContext {
   task_root: string;
 }
 
+/** Native content and stack traces never cross this boundary. */
+export interface PiFailureOrigin { plugin_id?: string; phase: string }
+const nativePhases = new Set(['session_start', 'session_shutdown', 'agent_start', 'agent_end', 'agent_settled',
+  'turn_start', 'turn_end', 'message_start', 'message_update', 'message_end', 'tool_execution_start',
+  'tool_execution_update', 'tool_execution_end', 'tool_call', 'tool_result', 'context', 'before_agent_start',
+  'session_before_compact', 'session_compact', 'session_compact_failed']);
+
 export interface PiSessionHostOptions {
   /** Accepts the locally imported SDK module without requiring a public dependency. */
   sdk: unknown;
@@ -51,8 +58,11 @@ export interface PiSessionHostOptions {
   initialize(context: PiSessionContext, artifacts: readonly ArtifactRef[]): Promise<void>;
   /** The driver resolves only after native execution stops. */
   run(session: PiSession, context: PiSessionContext): ReturnType<NativeSessionHandle['run']>;
-  /** Only lifecycle names cross this boundary, never raw native events or context. */
-  observe?(event: 'started' | 'shutdown' | 'extension-error' | 'aspect-error', context: PiSessionContext): Promise<void>;
+  /** Only lifecycle names and bound origin cross this boundary, never raw native events. */
+  observe?(event: 'started' | 'shutdown' | 'extension-error' | 'aspect-error', context: PiSessionContext,
+    origin?: PiFailureOrigin): Promise<void>;
+  /** Flush required governance writes after shutdown and before terminal settlement. */
+  finalize?(context: PiSessionContext): Promise<void>;
 }
 
 function unavailable(): ContainerFailure {
@@ -117,10 +127,10 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
       let closed = false;
       let extensionFailed = false;
       let observations = Promise.resolve();
-      const observe = (event: 'started' | 'shutdown' | 'extension-error' | 'aspect-error') => {
+      const observe = (event: 'started' | 'shutdown' | 'extension-error' | 'aspect-error', origin?: PiFailureOrigin) => {
         // An optional observer cannot fail or change native execution.
         observations = observations.then(async () => {
-          try { await options.observe?.(event, snapshot()); } catch { /* observer isolation */ }
+          try { await options.observe?.(event, snapshot(), origin); } catch { /* observer isolation */ }
         });
         return observations;
       };
@@ -132,7 +142,10 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
           await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'exit' });
           await observe('shutdown');
           if (extensionFailed) throw nativeFailure();
-        } finally { session.dispose(); }
+        } finally {
+          try { await observations; await options.finalize?.(snapshot()); }
+          finally { session.dispose(); }
+        }
       };
       return {
         runtime_session_id: sessionManager.getSessionId(),
@@ -162,7 +175,9 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
               const owner = nativePath === undefined ? undefined : entryOwners.get(pathKey(nativePath));
               const isAspect = owner !== undefined && context.plan.aspect_plugin_ids.includes(owner);
               if (!isAspect) extensionFailed = true;
-              void observe(isAspect ? 'aspect-error' : 'extension-error');
+              const event = typeof error === 'object' && error !== null && 'event' in error ? error.event : undefined;
+              const phase = typeof event === 'string' && nativePhases.has(event) ? event : 'unknown';
+              void observe(isAspect ? 'aspect-error' : 'extension-error', { ...(owner ? { plugin_id: owner } : {}), phase });
             } });
             await observations;
             if (extensionFailed) throw nativeFailure();

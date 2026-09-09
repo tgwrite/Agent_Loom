@@ -104,6 +104,10 @@ function output(value: unknown, json: boolean): void {
       for (const [type, count] of Object.entries(counts)) console.log(`Artifacts: ${plugin} ${type} = ${count}`);
     }
     if (session.failure) console.log(`Failure: ${session.failure.code}: ${session.failure.message}`);
+    for (const event of session.events.filter(e => e.type === 'observer.failed')) {
+      const payload = event.payload as { plugin_id: string; failure: { code: string; message: string } };
+      console.log(`Aspect failure: ${payload.plugin_id}: ${payload.failure.code}: ${payload.failure.message}`);
+    }
     console.log(`Events: ${session.events.map((event) => event.type).join(', ')}`);
   }
   if (!snapshot.sessions.length) console.log('Sessions: none');

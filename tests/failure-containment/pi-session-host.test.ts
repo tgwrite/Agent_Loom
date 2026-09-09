@@ -11,18 +11,26 @@ import type { PiSdk, PiSessionHostOptions } from '../../packages/runtime-pi/src/
 import { artifact, session, testApplication, timestamp } from '../helpers.ts';
 import { createHash } from 'node:crypto';
 
-async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' | 'load' | 'extra') {
+async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' | 'load' | 'extra', twoAspects = false) {
   const root = await mkdtemp(join(tmpdir(), 'loom-pi-host-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const application = structuredClone(testApplication);
   application.runtime = { id: 'pi', version: 'test' };
   for (const plugin of application.plugins) plugin.native.runtime = 'pi';
+  if (twoAspects) {
+    application.plugins = [...application.plugins, { ...structuredClone(application.plugins[1]!), id: 'second-observer',
+      native: { runtime: 'pi', binding_key: 'second-observer' } }];
+    const profile = application.profiles.find(p => p.id === 'test-observing')!;
+    profile.aspects = [...profile.aspects, 'second-observer'];
+  }
   const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'task-one',
     application_id: application.id, application, title: 'Synthetic bridge test', created_at: timestamp });
   const entry = join(root, 'domain.mjs');
   const aspect = join(root, 'aspect.mjs');
   await writeFile(entry, 'export default () => {};');
   await writeFile(aspect, 'export default () => {};');
+  const secondAspect = join(root, 'second-aspect.mjs');
+  if (twoAspects) await writeFile(secondAspect, 'export default () => {};');
   const order: string[] = [];
   let loaderOptions: Record<string, unknown> = {};
   let loadedSettings: Record<string, unknown> = {};
@@ -58,7 +66,8 @@ async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' |
   const options: PiSessionHostOptions = {
     sdk, sdkVersion: 'test', expectedVersion: 'test', agentDir: root,
     settings: { packages: ['unselected-package'], extensions: ['unselected-extension'], defaultModel: 'test-model' }, modelRuntime: {},
-    bindings: { 'test-domain': { entry }, 'test-observer': { entry: aspect } },
+    bindings: { 'test-domain': { entry }, 'test-observer': { entry: aspect },
+      ...(twoAspects ? { 'second-observer': { entry: secondAspect } } : {}) },
     async initialize(context) {
       assert.equal((await store.getSession(context.session_id)).status, 'running');
       order.push('initialize');
@@ -119,6 +128,60 @@ test('Application host rejects an invalid publication without indexing success',
   await assert.rejects(executeSession(f.store, await prepareSession(f.store, 'test-profile'), host, { id: 'actor' }),
     { code: 'NativeExecutionFailed' });
   assert.equal((await f.store.listArtifacts()).length, 0);
+  assert.equal((await f.store.listSessions())[0]!.status, 'failed');
+});
+
+test('Application host contains two independent aspect failures and attributes surviving native output', async t => {
+  const f = await setup(t, 'aspect', true);
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
+    'test-observer': { ...f.options.bindings['test-observer']!, async afterRun(_session, context) {
+      await writeFile(join(context.task_root, 'review.md'), 'Native review');
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.md', verification_status: 'COMPLETED' }];
+    } },
+    'second-observer': { ...f.options.bindings['second-observer']!, async afterRun() { throw new Error('private diagnostic'); } },
+  } });
+  const result = await executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'operator' });
+  assert.equal(result.status, 'completed');
+  const [artifact] = await f.store.listArtifacts();
+  assert.equal(artifact!.producer.plugin_id, 'test-observer');
+  assert.equal(artifact!.producer.session_id, result.id);
+  const events = await f.store.listEvents(result.id);
+  const failures = events.filter(e => e.type === 'observer.failed');
+  assert.equal(failures.length, 2);
+  assert.deepEqual(failures.map(e => (e.payload as { plugin_id: string }).plugin_id), ['test-observer', 'second-observer']);
+  assert(JSON.stringify(failures).includes('session_start'));
+  assert(JSON.stringify(failures).includes('after-run'));
+  assert(!JSON.stringify(events).includes('private diagnostic'));
+  assert.equal(events.at(-1)!.type, 'session.completed');
+});
+
+test('Invalid aspect output is not indexed and does not prevent the next aspect from running', async t => {
+  const f = await setup(t, undefined, true);
+  let secondRan = false;
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
+    'test-observer': { ...f.options.bindings['test-observer']!, async afterRun() {
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: '../escape.md', verification_status: 'COMPLETED' }];
+    } },
+    'second-observer': { ...f.options.bindings['second-observer']!, async afterRun() { secondRan = true; return []; } },
+  } });
+  const result = await executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'operator' });
+  assert.equal(result.status, 'completed');
+  assert(secondRan);
+  assert.deepEqual(await f.store.listArtifacts(), []);
+  assert.equal((await f.store.listEvents(result.id)).filter(e => e.type === 'observer.failed').length, 1);
+});
+
+test('Required aspect governance persistence failure cannot be hidden by optional native observation', async t => {
+  const f = await setup(t, 'aspect');
+  f.store.recordObserverFailure = async () => { throw new Error('Storage unavailable'); };
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
+    'test-observer': f.options.bindings['test-observer']!,
+  } });
+  await assert.rejects(executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'operator' }),
+    { code: 'NativeExecutionFailed' });
   assert.equal((await f.store.listSessions())[0]!.status, 'failed');
 });
 

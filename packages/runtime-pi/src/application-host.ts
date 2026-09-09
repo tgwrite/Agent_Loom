@@ -4,7 +4,7 @@ import { relative } from 'node:path';
 import { ContainerFailure, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
 import type { ArtifactRef, LocalTaskStore } from '../../container-core/src/index.ts';
 import { createPiSessionHost } from './session-host.ts';
-import type { PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
+import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
 
 /** Domain assertions supplied by an adapter; the host does not establish domain truth. */
 export interface NativePublication {
@@ -19,10 +19,13 @@ export interface PiApplicationContext extends PiSessionContext { task_id: string
 export interface PiApplicationAdapter extends PiPluginBinding {
   initialize?(context: PiApplicationContext, artifacts: readonly ArtifactRef[]): Promise<void>;
   run?(session: PiSession, context: PiApplicationContext): Promise<readonly NativePublication[]>;
+  /** Optional explicit aspect phase, after domain execution, before native shutdown.
+   * Native hooks remain owned by Pi. An adapter failure is attributed and contained. */
+  afterRun?(session: PiSession, context: PiApplicationContext, outcome: 'completed' | 'failed'): Promise<readonly NativePublication[]>;
 }
 
 export interface PiApplicationHostOptions extends Omit<PiSessionHostOptions,
-  'expectedVersion' | 'bindings' | 'initialize' | 'run' | 'observe'> {
+  'expectedVersion' | 'bindings' | 'initialize' | 'run' | 'observe' | 'finalize'> {
   store: LocalTaskStore;
   /** Application native.binding_key -> reusable adapter. */
   adapters: Readonly<Record<string, PiApplicationAdapter>>;
@@ -46,14 +49,48 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
     return adapters[plugin.native.binding_key]!;
   };
   const domainContext = (context: PiSessionContext): PiApplicationContext => ({ ...context, task_id: store.task.id });
-  const observe = async (event: string, context: PiSessionContext) => {
+  // Pi callbacks and explicit aspect phases share a single governance writer.
+  // A storage rejection remains sticky and is surfaced before terminal settlement.
+  let writes: Promise<unknown> = Promise.resolve();
+  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = writes.then(operation);
+    writes = next;
+    void next.catch(() => {});
+    return next;
+  };
+  const aspectFailure = (context: PiSessionContext, pluginId: string, phase: string) =>
+    store.recordObserverFailure(context.session_id, pluginId, { code: 'NativeAspectFailed',
+      message: `Native aspect failed during ${phase}.`, source: pluginId, timestamp: new Date().toISOString() });
+  const observe = (event: string, context: PiSessionContext, origin?: PiFailureOrigin) => enqueue(async () => {
     const session = await store.getSession(context.session_id);
     await store.appendEvent({ id: randomUUID(), type: `runtime.pi.${event}`, timestamp: new Date().toISOString(),
       task_id: store.task.id, session_id: session.id, actor_id: session.actor.id,
-      source: 'runtime-pi', correlation_id: session.id, payload: {} });
-  };
+      source: 'runtime-pi', correlation_id: session.id, payload: origin ? { ...origin } : {} });
+    if (event === 'aspect-error' && origin?.plugin_id) await aspectFailure(context, origin.plugin_id, origin.phase);
+  });
   const rejection = async (event: string, context: PiSessionContext) => {
     try { await observe(event, context); } catch { /* preserve the native failure */ }
+  };
+  const publish = async (context: PiSessionContext, pluginId: string, publications: readonly NativePublication[]) => {
+    const producer = await store.getSession(context.session_id);
+    // Validate and read the whole batch before registering any of it.
+    const records = await Promise.all(publications.map(async publication => {
+      const plugin = store.task.application.plugins.find(p => p.id === pluginId);
+      if (!context.plan.plugin_ids.includes(pluginId)
+        || !plugin?.produces?.some(p => p.type === publication.type && p.version === publication.version)
+        || typeof publication.verification_status !== 'string' || !publication.verification_status.trim()) {
+        throw new ContainerFailure('InvalidRecord', 'Native publication contract or verification is invalid.');
+      }
+      const path = await realpath(resolveTaskPath(store.taskRoot, publication.path));
+      taskRelativePath(relative(await realpath(store.taskRoot), path).replaceAll('\\', '/'));
+      return { publication, digest: createHash('sha256').update(await readFile(path)).digest('hex') };
+    }));
+    for (const { publication, digest } of records) await enqueue(() => store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
+      type: publication.type, version: publication.version,
+      producer: { plugin_id: pluginId, capability_id: 'native-publication', session_id: producer.id },
+      executor: { actor_id: producer.actor.id, runtime_id: producer.runtime.id },
+      verification: { status: publication.verification_status }, payload_ref: { kind: 'file', path: publication.path },
+      sha256: digest, created_at: new Date().toISOString() }));
   };
   return createPiSessionHost({ ...options, bindings, expectedVersion: store.task.application.runtime.version,
     async initialize(context, artifacts) {
@@ -61,23 +98,30 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
       catch (error) { await rejection('initialization-rejected', context); throw error; }
     },
     observe,
+    async finalize() { await writes; },
     async run(session, context) {
-      let publications: readonly NativePublication[];
-      try { publications = await primary(context).run!(session, domainContext(context)); }
-      catch (error) { await rejection('execution-rejected', context); throw error; }
-      const producer = await store.getSession(context.session_id);
-      for (const publication of publications) {
-        const path = await realpath(resolveTaskPath(store.taskRoot, publication.path));
-        // A task-relative spelling must not hide an escaping symlink.
-        taskRelativePath(relative(await realpath(store.taskRoot), path).replaceAll('\\', '/'));
-        const digest = createHash('sha256').update(await readFile(path)).digest('hex');
-        await store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
-          type: publication.type, version: publication.version,
-          producer: { plugin_id: producer.primary_plugin_id!, capability_id: 'native-publication', session_id: producer.id },
-          executor: { actor_id: producer.actor.id, runtime_id: producer.runtime.id },
-          verification: { status: publication.verification_status },
-          payload_ref: { kind: 'file', path: publication.path }, sha256: digest, created_at: new Date().toISOString() });
+      let outcome: 'completed' | 'failed' = 'completed';
+      let domainError: unknown;
+      try {
+        const publications = await primary(context).run!(session, domainContext(context));
+        await publish(context, context.plan.primary_plugin_id!, publications);
+      } catch (error) { outcome = 'failed'; domainError = error; await rejection('execution-rejected', context); }
+      for (const pluginId of context.plan.aspect_plugin_ids) {
+        const plugin = store.task.application.plugins.find(p => p.id === pluginId)!;
+        const adapter = adapters[plugin.native.binding_key]!;
+        if (!adapter.afterRun) continue;
+        await observe('aspect-started', context, { plugin_id: pluginId, phase: 'after-run' });
+        try {
+          const publications = await adapter.afterRun(session, domainContext(context), outcome);
+          await publish(context, pluginId, publications);
+        } catch {
+          await enqueue(() => aspectFailure(context, pluginId, 'after-run'));
+          continue;
+        }
+        await observe('aspect-completed', context, { plugin_id: pluginId, phase: 'after-run' });
       }
+      await writes;
+      if (outcome === 'failed') throw domainError;
       return { status: 'completed' };
     },
   });

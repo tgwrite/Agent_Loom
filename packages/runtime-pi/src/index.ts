@@ -4,7 +4,7 @@ import { ContainerFailure } from '../../container-core/src/index.ts';
 export { createPiSessionHost } from './session-host.ts';
 export { createPiApplicationHost } from './application-host.ts';
 export type { NativePublication, PiApplicationAdapter, PiApplicationContext, PiApplicationHostOptions } from './application-host.ts';
-export type { PiSdk, PiSession, PiPluginBinding, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
+export type { PiSdk, PiSession, PiPluginBinding, PiSessionContext, PiSessionHostOptions, PiFailureOrigin } from './session-host.ts';
 
 export const PI_REFERENCE_TARGET = '0.85.1';
 
