@@ -5,7 +5,7 @@ import type { ArtifactRecord, ArtifactRef, ArtifactRequirement, ArtifactConsumpt
 import { resolveProfile } from '../application/index.ts';
 import type { CoreEventType, EventEnvelope } from '../event/index.ts';
 import { ContainerFailure } from '../failure/index.ts';
-import type { FailureRecord } from '../failure/index.ts';
+import type { FailureRecord, ObserverFailureContext } from '../failure/index.ts';
 import type { JsonValue } from '../json.ts';
 import type { SessionRunRecord } from '../session/index.ts';
 import type { TaskRecord } from '../task/index.ts';
@@ -276,13 +276,15 @@ export class LocalTaskStore {
     return records;
   }
 
-  async recordObserverFailure(sessionId: string, pluginId: string, failure: FailureRecord): Promise<void> {
+  async recordObserverFailure(sessionId: string, pluginId: string, failure: FailureRecord,
+    context: ObserverFailureContext = { phase: 'unknown', failure_class: 'unspecified' }): Promise<void> {
     validateFailure(failure);
     const session = await this.getSession(sessionId);
     requireRecord(session.status === 'running' && session.aspect_plugin_ids.includes(pluginId),
       'Observer must be an aspect of a running Session.');
     await io(() => this.#coreEvent(session, 'observer.failed', failure.timestamp,
-      { plugin_id: pluginId, failure: { ...failure } }));
+      { contract_version: 2, plugin_id: pluginId, phase: context.phase, failure_class: context.failure_class,
+        failure: { ...failure } }));
   }
 
   #assertTask(taskId: string): void {

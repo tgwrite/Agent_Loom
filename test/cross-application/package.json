@@ -1,0 +1,16 @@
+{
+  "name": "loom-cross-application-experiment",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@artale/pi-json": "1.1.0",
+    "@trycedar/pi-mdiff": "0.4.0",
+    "pi-web-utils": "0.1.1",
+    "pi-markdown-preview": "0.16.0",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
+    "@sinclair/typebox": "0.34.48",
+    "typebox": "1.1.15"
+  }
+}

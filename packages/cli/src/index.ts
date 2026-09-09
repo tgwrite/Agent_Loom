@@ -105,8 +105,10 @@ function output(value: unknown, json: boolean): void {
     }
     if (session.failure) console.log(`Failure: ${session.failure.code}: ${session.failure.message}`);
     for (const event of session.events.filter(e => e.type === 'observer.failed')) {
-      const payload = event.payload as { plugin_id: string; failure: { code: string; message: string } };
-      console.log(`Aspect failure: ${payload.plugin_id}: ${payload.failure.code}: ${payload.failure.message}`);
+      const payload = event.payload as { plugin_id: string; phase?: string; failure_class?: string;
+        failure: { code: string; message: string } };
+      console.log(`Aspect failure: ${payload.plugin_id}: ${payload.failure.code}: ${payload.failure.message}`
+        + (payload.phase ? ` [${payload.phase}; ${payload.failure_class}]` : ' [legacy]'));
     }
     console.log(`Events: ${session.events.map((event) => event.type).join(', ')}`);
   }

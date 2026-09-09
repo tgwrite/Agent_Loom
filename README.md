@@ -157,6 +157,11 @@ CLI and existing integrations at `44fd7f2`, then adds a test-local native sessio
 audit aspect. It measures inherited governance and marginal changes against the
 original control, including audit execution after domain failure.
 
+The [cross-Application experiment](test/cross-application/README.md) compares one,
+two and three Session applications using distinct native domain plugins. It checks
+shared semantic ownership during failure-contract and provenance migrations,
+allowing the no-Loom comparator to share its own governance implementation.
+
 The remaining work includes normal interactive Pi usage, explicit conflict
 resolution, original reference compatibility and complete product acceptance.
 Synthetic Core coverage and native Plugin acceptance remain separate. Local

@@ -107,6 +107,21 @@ export function validateEvent(value: EventEnvelope): void {
     || value.type === 'observer.failed' || /^runtime\.[a-z][a-z0-9_.-]*$/.test(value.type)
   ), 'Unsupported Event type.');
   jsonValue(value.payload);
+  if (value.type === 'observer.failed') {
+    const payload = value.payload as unknown as { plugin_id: string; failure: FailureRecord; contract_version?: number;
+      phase?: string; failure_class?: string };
+    requireRecord(payload !== null && typeof payload === 'object', 'Observer failure payload is required.');
+    identifier(payload.plugin_id);
+    requireRecord(payload.failure !== null && typeof payload.failure === 'object', 'Observer failure details are required.');
+    validateFailure(payload.failure);
+    // Existing V1 rows remain readable without inventing historical phase facts.
+    if (payload.contract_version !== undefined || payload.phase !== undefined || payload.failure_class !== undefined) {
+      requireRecord(payload.contract_version === 2, 'Unsupported observer failure contract.');
+      requireRecord(typeof payload.phase === 'string' && /^[a-z][a-z0-9_-]*$/.test(payload.phase), 'Observer phase is invalid.');
+      requireRecord(['native-hook', 'aspect-execution', 'publication-validation', 'governance-storage', 'unspecified']
+        .includes(payload.failure_class ?? ''), 'Observer failure class is invalid.');
+    }
+  }
 }
 
 export function validateConsumption(value: ArtifactConsumptionRecord): void {

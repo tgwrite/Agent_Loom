@@ -149,6 +149,8 @@ test('Application host contains two independent aspect failures and attributes s
   const events = await f.store.listEvents(result.id);
   const failures = events.filter(e => e.type === 'observer.failed');
   assert.equal(failures.length, 2);
+  assert.deepEqual(failures.map(e => (e.payload as { failure_class: string }).failure_class), ['native-hook', 'aspect-execution']);
+  assert.deepEqual(failures.map(e => (e.payload as { phase: string }).phase), ['session_start', 'after-run']);
   assert.deepEqual(failures.map(e => (e.payload as { plugin_id: string }).plugin_id), ['test-observer', 'second-observer']);
   assert(JSON.stringify(failures).includes('session_start'));
   assert(JSON.stringify(failures).includes('after-run'));
@@ -170,7 +172,29 @@ test('Invalid aspect output is not indexed and does not prevent the next aspect 
   assert.equal(result.status, 'completed');
   assert(secondRan);
   assert.deepEqual(await f.store.listArtifacts(), []);
-  assert.equal((await f.store.listEvents(result.id)).filter(e => e.type === 'observer.failed').length, 1);
+  const failures = (await f.store.listEvents(result.id)).filter(e => e.type === 'observer.failed');
+  assert.equal(failures.length, 1);
+  assert.equal((failures[0]!.payload as { failure_class: string }).failure_class, 'publication-validation');
+});
+
+test('Aspect publication storage rejection stays fatal and records its class when diagnostic storage survives', async t => {
+  const f = await setup(t);
+  f.store.publishArtifact = async () => { throw new Error('Storage write rejected'); };
+  const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+    'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
+    'test-observer': { ...f.options.bindings['test-observer']!, async afterRun(_native, context) {
+      await writeFile(join(context.task_root, 'review.txt'), 'Native review');
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.txt', verification_status: 'COMPLETED' }];
+    } },
+  } });
+  await assert.rejects(executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'operator' }),
+    { code: 'NativeExecutionFailed' });
+  const [session] = await f.store.listSessions();
+  assert.equal(session!.status, 'failed');
+  assert.deepEqual(await f.store.listArtifacts(), []);
+  const failures = (await f.store.listEvents(session!.id)).filter(e => e.type === 'observer.failed');
+  assert.equal(failures.length, 1);
+  assert.equal((failures[0]!.payload as { failure_class: string }).failure_class, 'governance-storage');
 });
 
 test('Required aspect governance persistence failure cannot be hidden by optional native observation', async t => {

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { ContainerFailure, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
-import type { ArtifactRef, LocalTaskStore } from '../../container-core/src/index.ts';
+import type { ArtifactRef, LocalTaskStore, ObserverFailureContext } from '../../container-core/src/index.ts';
 import { createPiSessionHost } from './session-host.ts';
 import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
 
@@ -58,15 +58,17 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
     void next.catch(() => {});
     return next;
   };
-  const aspectFailure = (context: PiSessionContext, pluginId: string, phase: string) =>
+  const aspectFailure = (context: PiSessionContext, pluginId: string, phase: string,
+    failureClass: ObserverFailureContext['failure_class']) =>
     store.recordObserverFailure(context.session_id, pluginId, { code: 'NativeAspectFailed',
-      message: `Native aspect failed during ${phase}.`, source: pluginId, timestamp: new Date().toISOString() });
+      message: `Native aspect failed during ${phase}.`, source: pluginId, timestamp: new Date().toISOString() },
+    { phase, failure_class: failureClass });
   const observe = (event: string, context: PiSessionContext, origin?: PiFailureOrigin) => enqueue(async () => {
     const session = await store.getSession(context.session_id);
     await store.appendEvent({ id: randomUUID(), type: `runtime.pi.${event}`, timestamp: new Date().toISOString(),
       task_id: store.task.id, session_id: session.id, actor_id: session.actor.id,
       source: 'runtime-pi', correlation_id: session.id, payload: origin ? { ...origin } : {} });
-    if (event === 'aspect-error' && origin?.plugin_id) await aspectFailure(context, origin.plugin_id, origin.phase);
+    if (event === 'aspect-error' && origin?.plugin_id) await aspectFailure(context, origin.plugin_id, origin.phase, 'native-hook');
   });
   const rejection = async (event: string, context: PiSessionContext) => {
     try { await observe(event, context); } catch { /* preserve the native failure */ }
@@ -85,12 +87,22 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
       taskRelativePath(relative(await realpath(store.taskRoot), path).replaceAll('\\', '/'));
       return { publication, digest: createHash('sha256').update(await readFile(path)).digest('hex') };
     }));
-    for (const { publication, digest } of records) await enqueue(() => store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
+    for (const { publication, digest } of records) await enqueue(async () => {
+      try { await store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
       type: publication.type, version: publication.version,
       producer: { plugin_id: pluginId, capability_id: 'native-publication', session_id: producer.id },
       executor: { actor_id: producer.actor.id, runtime_id: producer.runtime.id },
       verification: { status: publication.verification_status }, payload_ref: { kind: 'file', path: publication.path },
-      sha256: digest, created_at: new Date().toISOString() }));
+      sha256: digest, created_at: new Date().toISOString() }); }
+      catch (error) {
+        if (context.plan.aspect_plugin_ids.includes(pluginId)) {
+          // The same writer may retain a diagnostic if storage is still usable.
+          // A failed write remains fatal even when the diagnostic can be saved.
+          try { await aspectFailure(context, pluginId, 'after-run', 'governance-storage'); } catch { /* storage unavailable */ }
+        }
+        throw error;
+      }
+    });
   };
   return createPiSessionHost({ ...options, bindings, expectedVersion: store.task.application.runtime.version,
     async initialize(context, artifacts) {
@@ -111,11 +123,14 @@ export function createPiApplicationHost(options: PiApplicationHostOptions) {
         const adapter = adapters[plugin.native.binding_key]!;
         if (!adapter.afterRun) continue;
         await observe('aspect-started', context, { plugin_id: pluginId, phase: 'after-run' });
+        let failureClass: ObserverFailureContext['failure_class'] = 'aspect-execution';
         try {
           const publications = await adapter.afterRun(session, domainContext(context), outcome);
+          failureClass = 'publication-validation';
           await publish(context, pluginId, publications);
         } catch {
-          await enqueue(() => aspectFailure(context, pluginId, 'after-run'));
+          await writes; // A rejected governance write must not become an optional aspect failure.
+          await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass));
           continue;
         }
         await observe('aspect-completed', context, { plugin_id: pluginId, phase: 'after-run' });
