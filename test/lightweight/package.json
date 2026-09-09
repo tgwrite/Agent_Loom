@@ -1,0 +1,17 @@
+{
+  "name": "agent-loom-lightweight-acceptance",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@jakeryderv/pi-artifacts": "0.11.0",
+    "@spences10/pi-telemetry": "0.0.33",
+    "pi-http-util": "2.0.5"
+  }
+}

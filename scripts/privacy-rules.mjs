@@ -2,6 +2,8 @@ import { homedir } from 'node:os';
 
 const approvedHosts = new Set([
   'registry.npmjs.org', 'nodejs.org', 'www.typescriptlang.org', 'www.apache.org',
+  // Synthetic HTTP fixtures bind locally; no real network address is published.
+  'localhost',
 ]);
 
 export const projectIdentity = 'Agent Loom contributors <contributors@example.invalid>';
@@ -26,7 +28,7 @@ export function inspectText(content, privateTerms = []) {
     try {
       const url = new URL(match[0]);
       if (!approvedHosts.has(url.hostname) || url.username || url.password
-        || (url.protocol !== 'https:' && url.hostname !== 'www.apache.org')) {
+        || (url.protocol !== 'https:' && !['www.apache.org', 'localhost'].includes(url.hostname))) {
         findings.add('unreviewed external URL');
       }
     } catch {

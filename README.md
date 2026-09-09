@@ -92,6 +92,7 @@ packages/cli/                  Application validation, Task lookup and inspectio
 adapters/                     Thin reference Plugin descriptors
 examples/c2-analysis-application/
 tests/                        Synthetic behavior and boundary checks
+test/lightweight/             Optional native Pi Plugin closure and test Handoff protocol
 scripts/                      Test runner and publication checks
 ```
 
@@ -120,6 +121,13 @@ domain data is overwritten. Public bridge tests use an injected synthetic SDK;
 native domain initialization and publication still require local integration.
 
 ## Iterating toward v0.1
+
+The optional [lightweight native acceptance](test/lightweight/README.md) exercises
+two Pi Sessions with public HTTP, report-export and telemetry Plugins. Packages
+are test-local and loaded explicitly at startup. Its default mode scripts model
+decisions while running real native tools; a separate model mode accepts a live
+URL and the existing Pi default model. It complements the original reference
+Application and does not establish its domain acceptance.
 
 The next steps are native Artifact publication and initialization, full compatibility
 verification, observer isolation, and a complete real E2E run. Synthetic Core coverage and real Plugin

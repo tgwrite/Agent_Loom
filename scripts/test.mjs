@@ -9,7 +9,7 @@ function discover(directory) {
   });
 }
 
-const files = discover('tests').sort();
+const files = [...discover('tests'), 'test/lightweight/handoff.test.mjs'].sort();
 if (files.length === 0) throw new Error('No behavioral tests were discovered.');
 const result = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit' });
 process.exit(result.status ?? 1);
