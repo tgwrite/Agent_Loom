@@ -148,8 +148,10 @@ export class LocalTaskStore {
       } } : {}) };
     validateSession(settled);
     await io(async () => {
-      await replaceJson(join(this.#root, 'sessions', sessionId, 'session.json'), settled);
       await this.#coreEvent(settled, `session.${status}`, finishedAt, settled.failure ? { failure: { ...settled.failure } } : {});
+      // Publish the terminal state only after its required event is durable.
+      // This is single-writer ordering, not a cross-file crash transaction.
+      await replaceJson(join(this.#root, 'sessions', sessionId, 'session.json'), settled);
     });
   }
 
