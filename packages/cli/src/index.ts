@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
+import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, taskInspectionView, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
 import type { ApplicationDefinition, SessionHost } from '../../container-core/src/index.ts';
 import { requireNativeIntegration } from '../../runtime-pi/src/index.ts';
 import { TaskCatalog } from './catalog.ts';
@@ -92,7 +92,7 @@ function output(value: unknown, json: boolean): void {
     console.log(JSON.stringify(value, null, 2));
     return;
   }
-  const snapshot = value as Awaited<ReturnType<typeof inspectTask>>;
+  const snapshot = taskInspectionView(value as Awaited<ReturnType<typeof inspectTask>>);
   console.log(`Task: ${snapshot.task.id}\nApplication: ${snapshot.task.application_id}@${snapshot.task.application.version}`);
   for (const session of snapshot.sessions) {
     console.log(`\nSession: ${session.id}\nProfile: ${session.profile_id}\nWorkspace: ${session.workspace}`);
@@ -100,20 +100,18 @@ function output(value: unknown, json: boolean): void {
     console.log(`Primary: ${session.primary_plugin_id ?? '(none)'}\nAspects: ${session.aspect_plugin_ids.join(', ') || '(none)'}`);
     for (const artifact of session.produced) {
       console.log(`Produced: ${artifact.type}@${artifact.version} ${artifact.verification.status} (${artifact.id})`);
-      if (artifact.producer_phase) console.log(`Native provenance: ${artifact.producer_phase} ${artifact.native_runtime_session_id}`);
+      if (artifact.native_provenance.length) console.log(`Native provenance: ${artifact.native_provenance.map(fact => fact.value).join(' ')}`);
     }
     for (const consumption of session.consumed) console.log(`Consumed: ${consumption.artifact_id} <- ${consumption.producer.session_id}`);
     for (const [plugin, counts] of Object.entries(session.plugin_artifact_counts)) {
       for (const [type, count] of Object.entries(counts)) console.log(`Artifacts: ${plugin} ${type} = ${count}`);
     }
     if (session.failure) console.log(`Failure: ${session.failure.code}: ${session.failure.message}`);
-    for (const event of session.events.filter(e => e.type === 'observer.failed')) {
-      const payload = event.payload as { plugin_id: string; phase?: string; failure_class?: string;
-        failure: { code: string; message: string } };
-      console.log(`Aspect failure: ${payload.plugin_id}: ${payload.failure.code}: ${payload.failure.message}`
-        + (payload.phase ? ` [${payload.phase}; ${payload.failure_class}]` : ' [legacy]'));
+    for (const aspect of session.aspect_failures) {
+      console.log(`Aspect failure: ${aspect.plugin_id}: ${aspect.failure.code}: ${aspect.failure.message}`
+        + ` [${aspect.context.map(fact => fact.value).join('; ')}]`);
     }
-    console.log(`Events: ${session.events.map((event) => event.type).join(', ')}`);
+    console.log(`Events: ${session.event_types.join(', ')}`);
   }
   if (!snapshot.sessions.length) console.log('Sessions: none');
 }

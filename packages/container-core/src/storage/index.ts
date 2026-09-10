@@ -2,9 +2,11 @@ import { access, appendFile, mkdir, readFile, readdir, rename, rm, writeFile } f
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ArtifactRecord, ArtifactRef, ArtifactRequirement, ArtifactConsumptionRecord } from '../artifact/index.ts';
+import { readNativeProvenance, toArtifactRef } from '../artifact/index.ts';
 import { resolveProfile } from '../application/index.ts';
 import type { CoreEventType, EventEnvelope } from '../event/index.ts';
 import { ContainerFailure } from '../failure/index.ts';
+import { createObserverFailure } from '../failure/observer.ts';
 import type { FailureRecord, ObserverFailureContext } from '../failure/index.ts';
 import type { JsonValue } from '../json.ts';
 import type { SessionRunRecord } from '../session/index.ts';
@@ -196,7 +198,7 @@ export class LocalTaskStore {
       await appendFile(join(this.#root, 'artifacts.jsonl'), `${JSON.stringify(artifact)}\n`);
       await this.#coreEvent(session, 'artifact.published', artifact.created_at, { artifact_id: artifact.id });
     });
-    return this.#ref(artifact);
+    return toArtifactRef(artifact);
   }
 
   async listArtifacts(): Promise<ArtifactRecord[]> {
@@ -223,7 +225,7 @@ export class LocalTaskStore {
     if (matches.length > 1) throw new ContainerFailure('BindingConflict', 'Multiple Artifacts satisfy this Task requirement.', {
       candidates: matches.map((artifact) => artifact.id),
     });
-    return this.#ref(match);
+    return toArtifactRef(match);
   }
 
   async getArtifact(artifactId: string): Promise<ArtifactRecord> {
@@ -285,8 +287,7 @@ export class LocalTaskStore {
     requireRecord(session.status === 'running' && session.aspect_plugin_ids.includes(pluginId),
       'Observer must be an aspect of a running Session.');
     await io(() => this.#coreEvent(session, 'observer.failed', failure.timestamp,
-      { contract_version: 2, plugin_id: pluginId, phase: context.phase, failure_class: context.failure_class,
-        failure: { ...failure } }));
+      createObserverFailure(pluginId, failure, context)));
   }
 
   #assertTask(taskId: string): void {
@@ -300,21 +301,14 @@ export class LocalTaskStore {
       'Artifact Contract is not declared by its producer in this Task.');
     requireRecord(artifact.executor.actor_id === session.actor.id
       && artifact.executor.runtime_id === session.runtime.id, 'Artifact executor does not match its Session.');
-    if (artifact.producer_phase !== undefined) {
-      requireRecord(artifact.native_runtime_session_id === session.runtime_session_id,
+    const provenance = readNativeProvenance(artifact);
+    if (provenance) {
+      requireRecord(provenance.native_runtime_session_id === session.runtime_session_id,
         'Native Artifact identity does not match its producer Session.');
-      requireRecord(artifact.producer_phase === 'domain-run'
+      requireRecord(provenance.producer_phase === 'domain-run'
         ? artifact.producer.plugin_id === session.primary_plugin_id
         : session.aspect_plugin_ids.includes(artifact.producer.plugin_id), 'Artifact phase does not match its producer role.');
     }
-  }
-
-  #ref(artifact: ArtifactRecord): ArtifactRef {
-    return structuredClone({ id: artifact.id, task_id: artifact.task_id, type: artifact.type,
-      version: artifact.version, payload_ref: artifact.payload_ref, sha256: artifact.sha256,
-      producer: artifact.producer, executor: artifact.executor, verification: artifact.verification,
-      ...(artifact.producer_phase !== undefined ? { producer_phase: artifact.producer_phase,
-        native_runtime_session_id: artifact.native_runtime_session_id! } : {}) });
   }
 
   async #lines<T>(file: string, validate: (value: T) => void): Promise<T[]> {

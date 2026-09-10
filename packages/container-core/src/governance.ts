@@ -119,27 +119,5 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
   }
 }
 
-export async function inspectTask(store: LocalTaskStore) {
-  const artifacts = await store.listArtifacts();
-  const consumptions = await store.listConsumptions();
-  const sessions = await store.listSessions();
-  return {
-    task: store.task,
-    sessions: await Promise.all(sessions.map(async (session) => ({
-      ...session,
-      produced: artifacts.filter((artifact) => artifact.producer.session_id === session.id),
-      consumed: consumptions.filter((record) => record.session_id === session.id).map((record) => ({
-        ...record, producer: artifacts.find((artifact) => artifact.id === record.artifact_id)!.producer,
-      })),
-      events: await store.listEvents(session.id),
-      plugin_artifact_counts: Object.fromEntries(session.plugin_ids.map((pluginId) => [pluginId,
-        Object.fromEntries([...new Set(artifacts.filter((artifact) => artifact.producer.session_id === session.id
-          && artifact.producer.plugin_id === pluginId).map((artifact) => artifact.type))].map((type) => [type,
-          artifacts.filter((artifact) => artifact.producer.session_id === session.id
-            && artifact.producer.plugin_id === pluginId && artifact.type === type).length])),
-      ])),
-    }))),
-    artifacts: artifacts.map((artifact) => ({ ...artifact,
-      consumers: consumptions.filter((record) => record.artifact_id === artifact.id) })),
-  };
-}
+// Preserve the existing Core import path.
+export { inspectTask } from './inspection.ts';

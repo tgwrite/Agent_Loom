@@ -30,11 +30,7 @@ export interface FailureRecord {
   timestamp: string;
 }
 
-/** Structured observer failure context. Unspecified preserves older callers. */
-export interface ObserverFailureContext {
-  phase: string;
-  failure_class: 'native-hook' | 'aspect-execution' | 'publication-validation' | 'governance-storage' | 'unspecified';
-}
+export type { ObserverFailureContext } from './observer.ts';
 
 export type InvocationResult<T> =
   | { ok: true; value: T }

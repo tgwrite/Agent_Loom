@@ -13,3 +13,4 @@ export * from './storage/index.ts';
 export * from './task/index.ts';
 export * from './paths.ts';
 export * from './governance.ts';
+export * from './inspection.ts';
