@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,6 +10,63 @@ import type { TestContext } from 'node:test';
 const executable = resolve('bin/loom.mjs');
 const application = resolve('tests/fixtures/synthetic.app.ts');
 const processFixture = resolve('tests/fixtures/session-process.mjs');
+
+test('CLI snapshots validated opaque input and rejects bad input before creating a Task', async t => {
+  const f = await scratch(t);
+  const app = join(f.directory, 'input.app.mjs'), input = join(f.directory, 'input.json');
+  await writeFile(app, `export { default } from ${JSON.stringify(pathToFileURL(application).href)};
+    export function validateTaskInput(value) {
+      if (!Number.isInteger(value?.threshold)) throw new Error('private input diagnostic');
+      value.threshold = 999;
+    }`);
+  const args = ['task', 'create', '--app', app, '--root', f.taskRoot, '--name', 'input-task', '--input', input, '--json'];
+  await writeFile(input, '{broken');
+  let result = run(args, f.env);
+  assert.equal(result.status, 1); assert.equal(JSON.parse(result.stderr).diagnostic.phase, 'task-input');
+  await assert.rejects(stat(f.taskRoot), { code: 'ENOENT' });
+  await writeFile(input, '{"threshold":"wrong"}');
+  result = run(args, f.env);
+  assert.equal(result.status, 1); assert.equal(JSON.parse(result.stderr).error.details.check, 'validateTaskInput');
+  assert(!result.stderr.includes('private input diagnostic'));
+  await assert.rejects(stat(f.taskRoot), { code: 'ENOENT' });
+  await writeFile(input, '{"threshold":7}');
+  result = run(args, f.env); assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).input.validation, 'application-validated');
+  await writeFile(input, '{"threshold":8}');
+  const saved = join(f.taskRoot, '.agent-loom', 'input.json');
+  assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')), { threshold: 7 });
+  assert.equal(run(args, f.env).status, 1);
+  assert.deepEqual(JSON.parse(await readFile(saved, 'utf8')), { threshold: 7 });
+  const { readTaskInput } = await import('../../packages/runtime-pi/src/index.ts');
+  assert.equal(await readTaskInput({ taskRoot: f.taskRoot }, value => (value as { threshold: number }).threshold), 7);
+});
+
+test('explanation does not load a Host, and summary preserves the full JSON contract', async t => {
+  const f = await scratch(t);
+  const app = join(f.directory, 'explain.app.mjs');
+  await writeFile(app, `export { default } from ${JSON.stringify(pathToFileURL(application).href)};
+    export const nativeHost = './must-not-load.mjs';`);
+  await writeFile(join(f.directory, 'must-not-load.mjs'), 'throw new Error("Host was loaded");');
+  const explained = run(['app', 'validate', app, '--definition-only', '--explain', '--json'], f.env);
+  assert.equal(explained.status, 0, explained.stderr);
+  const value = JSON.parse(explained.stdout);
+  assert.equal(value.native_integration, 'not-verified');
+  assert.equal(value.explanation.execution, 'explicit-session-start');
+  assert.equal(value.explanation.profiles.find((p: { id: string }) => p.id === 'test-consumer').requirements[0].type, 'SyntheticHandoff');
+  assert.equal(run(['task', 'create', '--app', app, '--root', f.taskRoot, '--name', 'summary-task'], f.env).status, 0);
+  const args = ['task', 'inspect', 'summary-task', '--json'];
+  const before = run(args, f.env).stdout;
+  const summary = run([...args, '--summary'], f.env);
+  assert.equal(summary.status, 0);
+  assert.equal(JSON.parse(summary.stdout).business_acceptance, 'not-evaluated');
+  assert.equal(JSON.parse(summary.stdout).schema_version, 1);
+  assert.equal(run(args, f.env).stdout, before);
+  const blocked = run(['session', 'start', '--task', 'summary-task', '--profile', 'test-consumer', '--json'], f.env);
+  assert.equal(JSON.parse(blocked.stderr).error.code, 'PreconditionNotSatisfied');
+  assert.equal(JSON.parse(blocked.stderr).diagnostic.phase, 'dependency-resolution');
+  assert.equal(run(args, f.env).stdout, before);
+  assert.equal(run(['task', 'inspect', '--help'], f.env).status, 0);
+});
 
 async function scratch(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'agent-loom-cli-'));

@@ -41,7 +41,37 @@ the [Node.js documentation](https://nodejs.org/api/typescript.html).
 After `npm run build`, `npm link` optionally exposes the `loom` command locally.
 No package has been published to a registry.
 
+### Local installable candidate
+
+To build a precompiled CLI/SDK archive locally:
+
+```sh
+npm run package:local
+```
+
+The command prints the candidate `.tgz` path under ignored `local/packages/`.
+It also creates SHA256SUMS and INSTALL.md. It builds in a fresh directory, packs
+only the selected JavaScript/declarations and public files, and verifies actual
+archive members and their contents. It does not publish or install Pi plugins.
+
+Run `npm run package:verify -- <candidate.tgz>` with that path to install into
+independent temporary prefixes outside this checkout. The check uses an empty
+npm cache and offline mode, exercises CLI/SDK and TypeScript imports, performs
+a synthetic two-Session handoff, and checks that global uninstall retains Task
+data. It preserves local evidence under ignored `.test-tmp/packages/`.
+
+See [installation instructions](packaging/INSTALL.md). This is a local alpha
+candidate; real webpage/report/review acceptance is still required before release.
+
 ## CLI development preview
+
+Application developers and coding agents can start with the
+[versioned integration guide](packaging/AGENT_GUIDE.md), included in local packages.
+It explains `createPiHostModule`, `readArtifactFile`, `readTaskInput`, CLI input
+snapshots, composition explanations and concise Task inspection. These helpers
+retain the existing dependency, consumption and failure semantics; they do not
+provide workflow scheduling or domain acceptance. Two different synthetic domain
+examples ship with the package for offline integration checks.
 
 ```sh
 npm run loom -- app validate ./examples/c2-analysis-application/agent-loom.app.ts --definition-only

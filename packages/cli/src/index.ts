@@ -1,16 +1,18 @@
 import { dirname, resolve } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, taskInspectionView, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
 import type { ApplicationDefinition, SessionHost } from '../../container-core/src/index.ts';
 import { requireNativeIntegration } from '../../runtime-pi/src/index.ts';
 import { TaskCatalog } from './catalog.ts';
 import { readHostBinding, saveHostBinding } from './host-binding.ts';
+import { diagnose, explainApplication, printTaskSummary, summarizeTask } from './experience.ts';
 
 const help = `Agent Loom (development preview)
 
-loom app validate <application.ts> [--definition-only | --host-module <file>] [--json]
-loom task create --app <application.ts> --root <directory> --name <id> [--host-module <file>] [--json]
-loom task inspect <id> [--root <directory>] [--json]
+loom app validate <application.ts> [--definition-only | --host-module <file>] [--explain] [--json]
+loom task create --app <application.ts> --root <directory> --name <id> [--input <json-file>] [--host-module <file>] [--json]
+loom task inspect <id> [--root <directory>] [--summary] [--json]
 loom session start --task <id> --profile <profile> [--root <directory>] [--workspace <relative>] [--dry-run | --host-module <file>] [--json]
 loom session inspect <id> --task <task-id> [--root <directory>] [--json]
 loom artifact inspect <id> --task <task-id> [--root <directory>] [--json]
@@ -19,7 +21,11 @@ An application module may export nativeHost (a path relative to that module).
 Task creation saves this local binding; later Sessions need only Task and Profile.
 A trusted --host-module overrides it and provides createSessionHost({ store }).
 No built-in Plugin installation is performed. Local Task indexing uses LOOM_STATE_DIR
-when set. Use --root to locate a Task without that index.`;
+when set. Use --root to locate a Task without that index.
+--input saves JSON in .agent-loom/input.json after optional validateTaskInput(value).
+--summary projects governance facts; it does not certify business acceptance.
+--explain describes composition and dependency gates without executing a Profile.
+Agent integration guide: agent-loom/AGENT_GUIDE.md in the installed package.`;
 
 function argumentsFor(args: string[], allowed: readonly string[]) {
   const flags = new Map<string, string | true>();
@@ -28,7 +34,7 @@ function argumentsFor(args: string[], allowed: readonly string[]) {
     const arg = args[i]!;
     if (!arg.startsWith('--')) { positionals.push(arg); continue; }
     if (!allowed.includes(arg) || flags.has(arg)) throw new ContainerFailure('InvalidArguments', 'Unknown or duplicate option.');
-    if (['--json', '--definition-only', '--dry-run'].includes(arg)) flags.set(arg, true);
+    if (['--json', '--definition-only', '--dry-run', '--summary', '--explain'].includes(arg)) flags.set(arg, true);
     else {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new ContainerFailure('InvalidArguments', 'Option requires a value.');
@@ -45,12 +51,18 @@ function argumentsFor(args: string[], allowed: readonly string[]) {
   };
 }
 
-async function loadApplication(file: string): Promise<{ application: ApplicationDefinition; nativeHost?: string }> {
+async function loadApplication(file: string): Promise<{ application: ApplicationDefinition; nativeHost?: string;
+  validateTaskInput?: (input: unknown) => unknown }> {
   let value: unknown;
   let nativeHost: string | undefined;
+  let validateTaskInput: ((input: unknown) => unknown) | undefined;
   try {
     const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
     value = module.default ?? module.application;
+    if (module.validateTaskInput !== undefined) {
+      if (typeof module.validateTaskInput !== 'function') throw new Error();
+      validateTaskInput = module.validateTaskInput as (input: unknown) => unknown;
+    }
     if (module.nativeHost !== undefined) {
       if (typeof module.nativeHost !== 'string' || !module.nativeHost.trim()) throw new Error();
       nativeHost = resolve(dirname(resolve(file)), module.nativeHost);
@@ -59,7 +71,7 @@ async function loadApplication(file: string): Promise<{ application: Application
     throw new ContainerFailure('InvalidDefinition', 'Unable to load Application module. Export the definition as default or application.');
   }
   validateApplication(value);
-  return { application: value, ...(nativeHost ? { nativeHost } : {}) };
+  return { application: value, ...(nativeHost ? { nativeHost } : {}), ...(validateTaskInput ? { validateTaskInput } : {}) };
 }
 
 async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHost> {
@@ -117,21 +129,23 @@ function output(value: unknown, json: boolean): void {
 }
 
 export async function main(args: string[]): Promise<number> {
+  let phase = 'arguments';
+  const command = args.slice(0, 2).join(' ');
   try {
     if (args.length === 0 || (args.length === 1 && ['--help', '-h'].includes(args[0]!))) {
       console.log(help);
       return 0;
     }
-    const command = args.slice(0, 2).join(' ');
     const allowed: Record<string, string[]> = {
-      'app validate': ['--definition-only', '--host-module', '--json'],
-      'task create': ['--app', '--root', '--name', '--host-module', '--json'],
-      'task inspect': ['--root', '--json'],
+      'app validate': ['--definition-only', '--host-module', '--explain', '--json'],
+      'task create': ['--app', '--root', '--name', '--input', '--host-module', '--json'],
+      'task inspect': ['--root', '--summary', '--json'],
       'session start': ['--task', '--profile', '--root', '--workspace', '--dry-run', '--host-module', '--json'],
       'session inspect': ['--task', '--root', '--json'],
       'artifact inspect': ['--task', '--root', '--json'],
     };
     if (!allowed[command]) throw new ContainerFailure('InvalidArguments', 'Unknown command. Use loom --help.');
+    if (args.length === 3 && args[2] === '--help') { console.log(help); return 0; }
     const options = argumentsFor(args.slice(2), allowed[command]);
     const needsPositional = !['task create', 'session start'].includes(command);
     if (options.positionals.length !== (needsPositional ? 1 : 0)) {
@@ -139,44 +153,68 @@ export async function main(args: string[]): Promise<number> {
     }
     const json = options.flags.has('--json');
     if (command === 'app validate') {
+      phase = 'application-loading';
       const { application, nativeHost } = await loadApplication(options.positionals[0]!);
       const definitionOnly = options.flags.has('--definition-only');
       const hostModule = options.value('--host-module') ?? nativeHost;
       if (definitionOnly && options.value('--host-module')) throw new ContainerFailure('InvalidArguments', 'Choose either --definition-only or --host-module.');
       if (!definitionOnly) {
+        phase = 'host-preflight';
         if (!hostModule) requireNativeIntegration();
         await validateNativeHost(hostModule, application);
       }
       output({ application: application.id, definition: 'valid', native_integration: definitionOnly ? 'not-verified' : 'host-preflight-passed',
-        profiles: application.profiles.map((profile) => profile.id) }, json);
+        profiles: application.profiles.map((profile) => profile.id),
+        ...(options.flags.has('--explain') ? { explanation: explainApplication(application, Boolean(hostModule)) } : {}) }, json);
       return 0;
     }
     const catalog = new TaskCatalog();
     if (command === 'task create') {
-      const { application, nativeHost } = await loadApplication(options.required('--app'));
+      phase = 'application-loading';
+      const { application, nativeHost, validateTaskInput } = await loadApplication(options.required('--app'));
       const id = options.required('--name');
       const root = options.required('--root');
+      phase = 'task-input';
+      const inputFile = options.value('--input');
+      let input: unknown;
+      if (inputFile !== undefined) {
+        try { input = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(resolve(inputFile)))); }
+        catch { throw new ContainerFailure('InvalidArguments', 'Task input must be a readable UTF-8 JSON file.', { option: '--input' }); }
+      }
+      if (validateTaskInput) {
+        try { await validateTaskInput(structuredClone(input)); }
+        catch { throw new ContainerFailure('InvalidArguments', 'Application rejected Task input.', { check: 'validateTaskInput' }); }
+      }
+      phase = 'task-creation';
       await catalog.ensureAvailable(id);
       const store = await LocalTaskStore.create(root, { schema_version: 2, id,
         application_id: application.id, application, title: id, created_at: new Date().toISOString() });
+      if (inputFile !== undefined) await writeFile(resolveTaskPath(store.taskRoot, '.agent-loom/input.json'),
+        JSON.stringify(input) + '\n', { flag: 'wx', mode: 0o600 });
       const hostModule = options.value('--host-module') ?? nativeHost;
       if (hostModule) await saveHostBinding(store, resolve(hostModule));
       await catalog.register(store);
-      output({ task: id, application: application.id, status: 'created', native_integration: 'not-verified' }, json);
+      output({ task: id, application: application.id, status: 'created', native_integration: 'not-verified',
+        ...(inputFile !== undefined ? { input: { path: '.agent-loom/input.json',
+          validation: validateTaskInput ? 'application-validated' : 'json-only' } } : {}) }, json);
       return 0;
     }
     const taskId = command === 'task inspect' ? options.positionals[0]! : options.required('--task');
+    phase = 'task-loading';
     const store = await catalog.open(taskId, options.value('--root'));
     if (command === 'session start') {
+      phase = 'dependency-resolution';
       const plan = await prepareSession(store, options.required('--profile'), options.value('--workspace'));
       const hostModule = options.value('--host-module');
       if (hostModule && options.flags.has('--dry-run')) {
         throw new ContainerFailure('InvalidArguments', 'Choose either --dry-run or --host-module.');
       }
       if (!options.flags.has('--dry-run')) {
+        phase = 'host-loading';
         const selectedHost = hostModule ?? await readHostBinding(store);
         if (!selectedHost) requireNativeIntegration();
         const host = await loadHost(selectedHost, store);
+        phase = 'session-execution';
         const session = await executeSession(store, plan, host, { id: 'local-operator' });
         output({ status: session.status, executed: true, session }, json);
         return session.status === 'completed' ? 0 : 1;
@@ -184,8 +222,13 @@ export async function main(args: string[]): Promise<number> {
       output({ status: 'planned', executed: false, native_integration: 'not-verified', ...plan }, json);
       return 0;
     }
+    phase = 'inspection';
     const snapshot = await inspectTask(store);
-    if (command === 'task inspect') output(snapshot, json);
+    if (command === 'task inspect' && options.flags.has('--summary')) {
+      const summary = summarizeTask(snapshot);
+      if (json) output(summary, true); else printTaskSummary(summary);
+    }
+    else if (command === 'task inspect') output(snapshot, json);
     else {
       const entries = command === 'session inspect' ? snapshot.sessions : snapshot.artifacts;
       const entry = entries.find((item) => item.id === options.positionals[0]);
@@ -197,7 +240,9 @@ export async function main(args: string[]): Promise<number> {
   } catch (error) {
     const failure = error instanceof ContainerFailure ? error
       : new ContainerFailure('StorageFailure', 'Operation failed. Inspect local configuration and filesystem access.');
-    console.error(JSON.stringify({ error: { code: failure.code, message: failure.message, details: failure.details } }));
+    console.error(JSON.stringify({ error: { code: failure.code, message: failure.message, details: failure.details },
+      diagnostic: diagnose(failure, ['app validate', 'task create', 'task inspect', 'session start', 'session inspect', 'artifact inspect'].includes(command)
+        ? command : 'unknown', phase) }));
     return 1;
   }
 }
