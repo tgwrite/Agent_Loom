@@ -1,5 +1,6 @@
 import { describeEntry } from '../../container-core/src/agent.ts';
 import { taskInspectionView } from '../../container-core/src/index.ts';
+import { projectSessionFacts } from '../../container-core/src/agent-receipt.ts';
 import type { ApplicationDefinition, ContainerFailure, TaskSnapshot } from '../../container-core/src/index.ts';
 
 /** Read-only projection of canonical governance facts, never a new acceptance record. */
@@ -9,17 +10,23 @@ export function summarizeTask(snapshot: TaskSnapshot) {
     schema_version: 1, task: view.task.id, application: view.task.application_id,
     business_acceptance: 'not-evaluated' as const,
     sessions: [...view.sessions].sort((a, b) => a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id))
-      .map(session => ({ id: session.id, profile: session.profile_id, started_at: session.started_at,
-      finished_at: session.finished_at ?? null,
-      ...(session.request ? { request_id: session.request.request_id, entry_id: session.request.entry_id } : {}),
-      status: session.status, primary: session.primary_plugin_id, aspects: session.aspect_plugin_ids,
-      failure: session.failure ?? null, aspect_failures: session.aspect_failures,
-      consumed: session.consumed.map(record => ({ artifact_id: record.artifact_id,
-        sha256: record.sha256, producer: record.producer })),
-      outputs: session.produced.map(artifact => ({ id: artifact.id, type: artifact.type,
-        version: artifact.version, verification: artifact.verification.status,
-        producer: artifact.producer, native_provenance: artifact.native_provenance, payload_ref: artifact.payload_ref })),
-    })),
+      .map(session => {
+        const facts = projectSessionFacts(session);
+        return { id: session.id, profile: session.profile_id, started_at: session.started_at,
+          finished_at: session.finished_at ?? null,
+          ...(session.request ? { request_id: session.request.request_id, entry_id: session.request.entry_id } : {}),
+          status: session.status, primary: session.primary_plugin_id, aspects: session.aspect_plugin_ids,
+          execution: facts.execution, observation: facts.observation, participants: facts.participants,
+          diagnostic: facts.diagnostic ?? null, business_acceptance: facts.business_acceptance,
+          failure: session.failure ?? null, aspect_failures: session.aspect_failures,
+          consumed: session.consumed.map(record => ({ id: record.id, artifact_id: record.artifact_id,
+            sha256: record.sha256, producer: record.producer, consumer_session_id: record.session_id,
+            consumer_plugin_id: record.consumer_plugin_id, consumed_at: record.consumed_at })),
+          outputs: session.produced.map(artifact => ({ id: artifact.id, type: artifact.type,
+            version: artifact.version, sha256: artifact.sha256, verification: artifact.verification.status,
+            producer: artifact.producer, native_provenance: artifact.native_provenance, payload_ref: artifact.payload_ref })),
+        };
+      }),
     counts: { sessions: snapshot.sessions.length, artifacts: snapshot.artifacts.length,
       consumptions: snapshot.sessions.reduce((sum, session) => sum + session.consumed.length, 0),
       aspect_failures: view.sessions.reduce((sum, session) => sum + session.aspect_failures.length, 0) },
@@ -29,7 +36,15 @@ export function summarizeTask(snapshot: TaskSnapshot) {
 export function printTaskSummary(summary: ReturnType<typeof summarizeTask>): void {
   console.log(`Task: ${summary.task}\nApplication: ${summary.application}\nBusiness acceptance: not evaluated by Loom`);
   for (const session of summary.sessions) {
-    console.log(`\n${session.profile}: ${session.status} (${session.id})`);
+    console.log(`\n${session.profile}: ${session.execution.status} (${session.id})`);
+    if (!session.observation.outcome_confirmed)
+      console.log(`Stored status: ${session.status}; terminal outcome is not confirmed.`);
+    if (session.participants.primary) console.log(`Primary domain phase: ${session.participants.primary.status}`);
+    if (session.participants.primary?.status === 'completed' && session.execution.status === 'failed')
+      console.log('The domain phase completed, but the complete Session failed. Inspect the failure phase and aspect evidence.');
+    if (session.diagnostic) console.log(`Diagnostic: ${session.diagnostic.reason_code}`
+      + (session.diagnostic.phase ? `; phase=${session.diagnostic.phase}` : '')
+      + (session.diagnostic.plugin_id ? `; plugin=${session.diagnostic.plugin_id}` : ''));
     if (session.failure) console.log(`Failure: ${session.failure.code}: ${session.failure.message}`);
     for (const failure of session.aspect_failures)
       console.log(`Aspect failure: ${failure.plugin_id}: ${failure.failure.code} [${failure.context.map(fact => `${fact.name}=${fact.value}`).join(', ')}]`);

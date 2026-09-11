@@ -1,6 +1,6 @@
 # Application and Pi adapter API reference
 
-Public contracts for **Agent Loom 0.1.0-alpha.6**. Start with
+Public contracts for **Agent Loom 0.1.0-alpha.7**. Start with
 [onboarding](START_HERE.md); use the [complete native example](NATIVE_INTEGRATION.md)
 for executable files. This page is a reference, not a request to inspect implementation
 source or installed internal paths.

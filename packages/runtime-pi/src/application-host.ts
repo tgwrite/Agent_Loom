@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
-import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath, recordParticipantObservation } from '../../container-core/src/index.ts';
+import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath, recordParticipantObservation, safeNativeFailure } from '../../container-core/src/index.ts';
 import type { ArtifactRef, ArtifactProducerPhase, LocalTaskStore, ObserverFailureContext, AgentRequest, SessionPlan } from '../../container-core/src/index.ts';
 import { createPiSessionHost } from './session-host.ts';
 import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
@@ -133,18 +133,29 @@ function createSelectedHost(options: PiApplicationHostOptions, profileId: string
   const host = createPiSessionHost({ ...options, bindings, expectedVersion: store.task.application.runtime.version,
     async initialize(context, artifacts) {
       try { await primary(context).initialize!(domainContext(context), artifacts); }
-      catch (error) { await rejection('initialization-rejected', context); throw error; }
+      catch (error) {
+        await rejection('initialization-rejected', context);
+        throw safeNativeFailure(error, { phase: 'initialization',
+          ...(context.plan.primary_plugin_id ? { plugin_id: context.plan.primary_plugin_id } : {}) });
+      }
     },
     observe,
     async finalize() { await writes; },
     async run(session, context) {
       let outcome: 'completed' | 'failed' = 'completed';
       let domainError: unknown;
+      let phase: 'domain-run' | 'publication' = 'domain-run';
       try {
         const publications = await primary(context).run!(session, domainContext(context));
+        phase = 'publication';
         await publish(context, context.plan.primary_plugin_id!, publications, 'domain-run');
         await observe('domain-completed', context);
-      } catch (error) { outcome = 'failed'; domainError = error; await rejection('execution-rejected', context); }
+      } catch (error) {
+        outcome = 'failed';
+        domainError = safeNativeFailure(error, { phase,
+          ...(context.plan.primary_plugin_id ? { plugin_id: context.plan.primary_plugin_id } : {}) });
+        await rejection('execution-rejected', context);
+      }
       for (const pluginId of context.plan.aspect_plugin_ids) {
         const plugin = store.task.application.plugins.find(p => p.id === pluginId)!;
         const adapter = adapters[plugin.native.binding_key]!;

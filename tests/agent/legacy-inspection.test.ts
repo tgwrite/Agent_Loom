@@ -5,9 +5,10 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fixture, artifact } from '../helpers.ts';
 import { executeSession, prepareSession, registerSafeDiagnostics, createNativeFailure, inspectTask,
-  diagnosticFor, ContainerFailure } from '../../packages/container-core/src/index.ts';
+  diagnosticFor, ContainerFailure, safeNativeFailure, readSafeDiagnostic } from '../../packages/container-core/src/index.ts';
 import type { SessionHost } from '../../packages/container-core/src/index.ts';
 import { connectLoom, createRequest } from '../../packages/container-core/src/agent.ts';
+import { summarizeTask } from '../../packages/cli/src/experience.ts';
 
 const reject = registerSafeDiagnostics('domain', ['DOMAIN_REJECTED']);
 const audit = registerSafeDiagnostics('aspect', ['AUDIT_REJECTED']);
@@ -87,6 +88,11 @@ test('request-free and request-bearing Sessions share confirmation rules for con
     assert.equal(session.observation.recorded_session_status, condition === 'running' ? 'running' : 'completed');
     assert('diagnostic' in session && session.diagnostic?.reason_code === 'OUTCOME_UNCONFIRMED');
     assert.equal(session.request_id, request?.request_id ?? null);
+    const summary = summarizeTask(await inspectTask(store)).sessions[0]!;
+    assert.equal(summary.status, condition === 'running' ? 'running' : 'completed');
+    assert.deepEqual(summary.execution, session.execution);
+    assert.deepEqual(summary.observation, session.observation);
+    assert.equal(summary.diagnostic?.reason_code, 'OUTCOME_UNCONFIRMED');
     assert.equal(await readFile(eventsFile, 'utf8'), before);
   }
 });
@@ -99,4 +105,27 @@ test('InvalidRecord diagnosis distinguishes persisted governance facts from call
   assert.equal(diagnosticFor(error, 'request').reason_code, 'REQUEST_REJECTED');
   assert.equal(diagnosticFor(error, 'native').reason_code, 'REQUEST_REJECTED');
   assert.equal(JSON.stringify(historical).includes('synthetic-raw-error-canary'), false);
+});
+
+test('failure context survives wrapping without trusting native properties, clones or mutated messages', () => {
+  const original = safeNativeFailure(reject('DOMAIN_REJECTED'), { phase: 'publication', plugin_id: 'test-domain' });
+  original.message = 'synthetic-message-canary';
+  const wrapped = safeNativeFailure(original, { phase: 'domain-run', plugin_id: 'outer-plugin' });
+  assert.equal(diagnosticFor(wrapped, 'native').phase, 'publication');
+  assert.equal(diagnosticFor(wrapped, 'native').plugin_id, 'test-domain');
+  assert.equal(diagnosticFor(wrapped, 'native').reason_code, 'DOMAIN_REJECTED');
+  assert.doesNotMatch(wrapped.message, /synthetic-message-canary/);
+  for (const untrusted of [structuredClone(original), { diagnostic: original.details.diagnostic,
+    plugin_id: 'forged-owner', phase: 'publication', message: 'synthetic-message-canary' }]) {
+    const safe = diagnosticFor(safeNativeFailure(untrusted, { phase: 'domain-run' }), 'native');
+    assert.equal(safe.phase, 'domain-run');
+    assert.equal(safe.plugin_id, undefined);
+    assert.equal(safe.reason_code, 'NATIVE_EXECUTION_FAILED');
+  }
+  const unknown = safeNativeFailure(new Error(), { phase: 'resource-loading' });
+  assert.equal(diagnosticFor(safeNativeFailure(unknown, { phase: 'initialization', plugin_id: 'outer-plugin' }), 'native').plugin_id, undefined);
+  const stored = diagnosticFor(wrapped, 'native');
+  assert.deepEqual(readSafeDiagnostic(JSON.parse(JSON.stringify(stored))), stored);
+  assert.equal(readSafeDiagnostic({ ...stored, phase: 'unreviewed-phase' }), undefined);
+  assert.equal(readSafeDiagnostic({ ...stored, plugin_id: '../outside' }), undefined);
 });

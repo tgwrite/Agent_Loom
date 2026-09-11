@@ -23,7 +23,7 @@ Agent 决定下一步做什么；Loom 管理明确选择的插件组合、依赖
 
 ## 安装与使用
 
-**当前版本：0.1.0-alpha.6 开发预览。** 从
+**当前版本：0.1.0-alpha.7 开发预览。** 从
 [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases) 下载预编译 `.tgz`、
 `SHA256SUMS` 和安装说明。Loom 要求 Node.js >=24.12.0 与 npm，原生插件可能要求更高版本。
 尚未发布 npm registry 包。

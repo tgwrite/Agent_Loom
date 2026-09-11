@@ -61,6 +61,46 @@ Publication status such as READY or COMPLETED is assigned by the domain adapter.
 The framework checks provenance and files, not arbitrary business claims. Validate
 all required outputs using their respective plugin contracts.
 
+## Diagnostics and summary additions in alpha.7
+
+The fields in this section are available in alpha.7. Existing alpha.6 installations
+and historical records may omit
+them; absence does not establish a phase or a Plugin origin.
+
+Safe `diagnostic.phase` identifies the Host operation that failed:
+`host-validation`, `host-launch`, `configuration`, `adapter-creation`,
+`initialization`, `resource-loading`, `session-creation`, `extension-binding`,
+`domain-run`, `publication`, `shutdown`, `finalization` or `disposal`.
+It is separate from the CLI's outer command phase and from a native lifecycle
+event name. `diagnostic.check` continues to identify a native readiness check.
+`diagnostic.plugin_id`, when present, identifies a known Plugin binding; an unknown
+origin stays absent. A runtime failure is not automatically an aspect failure.
+Raw native messages, paths and stacks are not copied into these fields.
+
+For example, a native command can report an error through Pi's extension error
+callback while the adapter returns its publications. The domain phase can then be
+`completed`, but the Session is `failed`. Its diagnostic can be
+`NATIVE_EXTENSION_FAILED` with `phase: domain-run`; the phase describes where Loom
+observed the failure, not a claim that the model or every native tool failed.
+If shutdown throws after a successful domain phase, the diagnostic instead
+identifies `shutdown`. Inspect `execution`, `participants` and `diagnostic` together.
+A later disposal error does not replace an earlier shutdown error; required
+governance storage failure remains fatal.
+
+`task inspect --summary --json` now includes each Session's `execution`,
+`observation`, `participants`, `diagnostic` and `business_acceptance` references,
+using the same projection as Agent Inspect. The existing `status` field remains
+the stored status for compatibility: use `execution.status` and
+`observation.outcome_confirmed` when assessing the outcome. Text summaries show
+an unconfirmed outcome as `unknown`, even if the stored status is `completed`.
+
+Summary outputs include their recorded `sha256` alongside `payload_ref`, producer
+and native provenance. Consumption rows include their record ID, consumer Session,
+consumer Plugin and timestamp. This lets an application locate the exact output,
+hash its current bytes and compare it with the publication and accepted input
+digest. Inspection reports recorded evidence; it does not rehash payload files or
+perform business verification. These queries do not invoke a Session.
+
 ## Retrying and upgrading
 
 A repeated request ID starts a new attempt; it is not an idempotency key. Repeated

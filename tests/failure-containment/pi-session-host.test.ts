@@ -5,13 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { executeSession, LocalTaskStore, prepareSession } from '../../packages/container-core/src/index.ts';
+import { executeSession, LocalTaskStore, prepareSession, inspectTask, ContainerFailure } from '../../packages/container-core/src/index.ts';
+import { connectLoom, createRequest } from '../../packages/container-core/src/agent.ts';
+import { summarizeTask, printTaskSummary } from '../../packages/cli/src/experience.ts';
 import { createPiApplicationHost, createPiSessionHost } from '../../packages/runtime-pi/src/index.ts';
 import type { PiSdk, PiSessionHostOptions } from '../../packages/runtime-pi/src/index.ts';
 import { artifact, session, testApplication, timestamp } from '../helpers.ts';
 import { createHash } from 'node:crypto';
 
-async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' | 'load' | 'extra', twoAspects = false) {
+async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' | 'load' | 'extra' | 'dispose' | 'shutdown-dispose', twoAspects = false) {
   const root = await mkdtemp(join(tmpdir(), 'loom-pi-host-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const application = structuredClone(testApplication);
@@ -34,6 +36,7 @@ async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' |
   const order: string[] = [];
   let loaderOptions: Record<string, unknown> = {};
   let loadedSettings: Record<string, unknown> = {};
+  let nativeError: (error: unknown) => void = () => { throw new Error('Extensions are not bound'); };
   const sdk: PiSdk = {
     SettingsManager: { inMemory(settings) { loadedSettings = settings; return {}; } },
     SessionManager: { create(_cwd, sessionDir) {
@@ -53,13 +56,14 @@ async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' |
       return { session: {
         async prompt() {}, async abort() {},
         async bindExtensions(options) {
+          nativeError = options.onError;
           order.push('bind');
           if (fault === 'primary' || fault === 'aspect') options.onError({
             extensionPath: fault === 'primary' ? entry : aspect, error: 'private diagnostic', event: 'session_start',
           });
         },
-        extensionRunner: { async emit() { order.push('shutdown'); if (fault === 'shutdown') throw new Error('private diagnostic'); } },
-        dispose() { order.push('dispose'); },
+        extensionRunner: { async emit() { order.push('shutdown'); if (fault === 'shutdown' || fault === 'shutdown-dispose') throw new Error('private diagnostic'); } },
+        dispose() { order.push('dispose'); if (fault === 'dispose' || fault === 'shutdown-dispose') throw new Error('private disposal diagnostic'); },
       } };
     },
   };
@@ -79,8 +83,73 @@ async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' |
     async observe(event) { order.push(`observe:${event}`); },
   };
   const run = async (profile = 'test-observing') => executeSession(store, await prepareSession(store, profile), createPiSessionHost(options), { id: 'actor' });
-  return { root, store, options, order, run, loaderOptions: () => loaderOptions, loadedSettings: () => loadedSettings };
+  return { root, store, options, order, run, nativeError: (error: unknown) => nativeError(error),
+    loaderOptions: () => loaderOptions, loadedSettings: () => loadedSettings };
 }
+
+test('late native errors retain trusted origin and phase after domain completion and cold inspection', async t => {
+  for (const origin of ['primary', 'unknown', 'aspect']) {
+    const f = await setup(t);
+    const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
+      'test-domain': { ...f.options.bindings['test-domain']!, request_mapping: 'v1', async initialize() {},
+        async run(_native, context) {
+          f.nativeError({ extensionPath: origin === 'primary' ? f.options.bindings['test-domain']!.entry
+            : origin === 'aspect' ? f.options.bindings['test-observer']!.entry : join(f.root, 'unbound.mjs'),
+          event: 'command', error: 'synthetic-native-canary', plugin_id: 'forged-owner', phase: 'forged-phase' });
+          await writeFile(join(context.task_root, 'result.txt'), 'Synthetic result');
+          return [{ type: 'SyntheticHandoff', version: '3', path: 'result.txt', verification_status: 'READY' }];
+        } },
+      'test-observer': f.options.bindings['test-observer']!,
+    } });
+    const loom = await connectLoom({ taskRoot: f.root, taskId: f.store.task.id,
+      host: { actor: { id: 'actor' }, async createHost() { return host; } } });
+    const receipt = await loom.invoke(createRequest(f.store.task.id, 'test-observing'));
+    assert.equal(receipt.execution.status, origin === 'aspect' ? 'completed' : 'failed');
+    assert.equal(receipt.participants.primary?.status, 'completed');
+    assert.equal(receipt.observation.outcome_confirmed, true);
+    if (origin === 'aspect') {
+      assert.equal(receipt.diagnostic, undefined);
+      assert.equal(receipt.aspect_failures[0]?.plugin_id, 'test-observer');
+    } else {
+      assert.equal(receipt.diagnostic?.reason_code, 'NATIVE_EXTENSION_FAILED');
+      assert.equal(receipt.diagnostic?.phase, 'domain-run');
+      assert.equal(receipt.diagnostic?.plugin_id, origin === 'primary' ? 'test-domain' : undefined);
+      assert.deepEqual(receipt.aspect_failures, []);
+    }
+    const cold = await (await connectLoom({ taskRoot: f.root, taskId: f.store.task.id })).inspect();
+    assert.deepEqual(cold.sessions[0], receipt);
+    const summary = summarizeTask(await inspectTask(await LocalTaskStore.open(f.root)));
+    const saved = summary.sessions[0]!;
+    assert.deepEqual(saved.execution, receipt.execution);
+    assert.deepEqual(saved.participants, receipt.participants);
+    assert.equal(saved.outputs[0]?.sha256, createHash('sha256').update('Synthetic result').digest('hex'));
+    assert.deepEqual(saved.outputs[0]?.payload_ref, { kind: 'file', path: 'result.txt' });
+    const printed: string[] = [];
+    const original = console.log;
+    try { console.log = value => { printed.push(String(value)); }; printTaskSummary(summary); }
+    finally { console.log = original; }
+    if (origin !== 'aspect') assert.match(printed.join('\n'), /domain phase completed, but the complete Session failed/);
+    assert.doesNotMatch(JSON.stringify([receipt, cold, summary, printed]), /synthetic-native-canary|forged-owner|forged-phase/);
+  }
+});
+
+test('shutdown diagnostics survive disposal failure and governance storage remains fatal', async t => {
+  for (const fault of ['shutdown', 'dispose', 'shutdown-dispose'] as const) {
+    const f = await setup(t, fault);
+    await assert.rejects(f.run(), { code: 'NativeExecutionFailed' });
+    const record = (await f.store.listSessions())[0]!;
+    assert.equal(record.failure?.diagnostic?.phase, fault === 'dispose' ? 'disposal' : 'shutdown');
+    assert.equal(f.order.filter(item => item === 'dispose').length, 1);
+    assert.doesNotMatch(JSON.stringify(record), /private diagnostic|private disposal diagnostic/);
+  }
+  const f = await setup(t, 'shutdown-dispose');
+  f.options.finalize = async () => { throw new ContainerFailure('StorageFailure', 'synthetic-storage-canary'); };
+  await assert.rejects(f.run(), { code: 'StorageFailure' });
+  const diagnostic = (await f.store.listSessions())[0]!.failure?.diagnostic;
+  assert.equal(diagnostic?.phase, 'finalization');
+  assert.equal(diagnostic?.reason_code, 'GOVERNANCE_STORAGE_FAILED');
+  assert.equal(f.order.filter(item => item === 'dispose').length, 1);
+});
 
 test('Pi host binds a native ID, initializes before discovery and flushes shutdown before settlement', async t => {
   const f = await setup(t);
@@ -220,6 +289,7 @@ test('Pi native initializer rejection cannot load extensions, run, or record con
   assert.deepEqual(f.order, ['allocate']);
   assert.deepEqual(await f.store.listConsumptions(), []);
   assert.equal((await f.store.listSessions())[0]?.status, 'failed');
+  assert.equal((await f.store.listSessions())[0]?.failure?.diagnostic?.phase, 'initialization');
 });
 
 test('Pi consumer records the accepted digest only between native initialization and execution', async t => {
@@ -250,6 +320,9 @@ test('Pi primary startup and load failures never enter execution', async t => {
     await assert.rejects(f.run(), { code: 'NativeExecutionFailed' });
     assert(!f.order.includes('run'));
     assert.equal((await f.store.listSessions())[0]?.status, 'failed');
+    const diagnostic = (await f.store.listSessions())[0]?.failure?.diagnostic;
+    assert.equal(diagnostic?.phase, fault === 'primary' ? 'extension-binding' : 'resource-loading');
+    assert.equal(diagnostic?.plugin_id, fault === 'primary' ? 'test-domain' : undefined);
     if (fault === 'primary') assert.equal(f.order.filter(item => item === 'dispose').length, 1);
   }
 });

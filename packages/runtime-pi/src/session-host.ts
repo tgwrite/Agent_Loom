@@ -1,7 +1,7 @@
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { ContainerFailure, safeNativeFailure, hostReadinessFailure, safeHostReadinessFailure } from '../../container-core/src/index.ts';
-import type { ArtifactRef, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/index.ts';
+import { ContainerFailure, safeNativeFailure, hostReadinessFailure, safeHostReadinessFailure, registerSafeDiagnostics } from '../../container-core/src/index.ts';
+import type { ArtifactRef, FailurePhase, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/index.ts';
 
 /** The small SDK surface exercised by the bridge; the SDK is supplied locally. */
 export interface PiSession {
@@ -72,6 +72,7 @@ function unavailable(): ContainerFailure {
 function nativeFailure(): ContainerFailure {
   return new ContainerFailure('NativeExecutionFailed', 'Native Pi session failed.');
 }
+const extensionFailure = registerSafeDiagnostics('native', ['NATIVE_EXTENSION_FAILED']);
 
 /**
  * Native initialization precedes resource loading, so generated workspace instructions
@@ -97,18 +98,20 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
     try {
       const entries = new Set<string>();
       for (const id of plan.plugin_ids) {
-        const binding = bindings[id];
-        if (!binding || !isAbsolute(binding.entry) || !(await stat(binding.entry)).isFile()) throw hostReadinessFailure('plugin-entry');
-        entryOwners.set(pathKey(binding.entry), id);
-        binding.entry = await realpath(binding.entry);
-        const key = pathKey(binding.entry);
-        if (entries.has(key)) throw hostReadinessFailure('plugin-entry');
-        entries.add(key);
-        entryOwners.set(key, id);
-        for (const prompt of binding.prompt_paths ?? []) {
-          try { if (!isAbsolute(prompt) || !(await stat(prompt)).isDirectory()) throw hostReadinessFailure('prompt-directory'); }
-          catch (error) { throw safeHostReadinessFailure(error, 'prompt-directory'); }
-        }
+        try {
+          const binding = bindings[id];
+          if (!binding || !isAbsolute(binding.entry) || !(await stat(binding.entry)).isFile()) throw hostReadinessFailure('plugin-entry');
+          entryOwners.set(pathKey(binding.entry), id);
+          binding.entry = await realpath(binding.entry);
+          const key = pathKey(binding.entry);
+          if (entries.has(key)) throw hostReadinessFailure('plugin-entry');
+          entries.add(key);
+          entryOwners.set(key, id);
+          for (const prompt of binding.prompt_paths ?? []) {
+            try { if (!isAbsolute(prompt) || !(await stat(prompt)).isDirectory()) throw hostReadinessFailure('prompt-directory'); }
+            catch (error) { throw safeHostReadinessFailure(error, 'prompt-directory', id); }
+          }
+        } catch (error) { throw safeHostReadinessFailure(error, 'plugin-entry', id); }
       }
     } catch (error) { throw safeHostReadinessFailure(error, 'plugin-entry'); }
   }
@@ -120,14 +123,18 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
       const context: PiSessionContext = { plan: structuredClone(plan), workspace,
         session_id: binding.session_id, task_root: binding.task_root };
       const snapshot = () => structuredClone(context);
-      const sessionManager = sdk.SessionManager.create(workspace,
-        resolve(binding.task_root, '.agent-loom', 'native-sessions', binding.session_id));
+      let sessionManager: ReturnType<PiSdk['SessionManager']['create']>;
+      try {
+        sessionManager = sdk.SessionManager.create(workspace,
+          resolve(binding.task_root, '.agent-loom', 'native-sessions', binding.session_id));
+      } catch (error) { throw safeNativeFailure(error, { phase: 'session-creation' }); }
       let session: PiSession | undefined;
       let initialized = false;
       let attempted = false;
       let running = false;
       let closed = false;
-      let extensionFailed = false;
+      let extensionError: ContainerFailure | undefined;
+      let phase: FailurePhase = 'initialization';
       let observations = Promise.resolve();
       const observe = (event: 'started' | 'shutdown' | 'extension-error' | 'aspect-error', origin?: PiFailureOrigin) => {
         // An optional observer cannot fail or change native execution.
@@ -140,14 +147,23 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
         if (closed) return;
         closed = true;
         if (!session) return;
+        phase = 'shutdown';
+        let failure: ContainerFailure | undefined;
         try {
           await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'exit' });
           await observe('shutdown');
-          if (extensionFailed) throw nativeFailure();
-        } finally {
-          try { await observations; await options.finalize?.(snapshot()); }
-          finally { session.dispose(); }
+          if (extensionError) throw extensionError;
+        } catch (error) { failure = safeNativeFailure(error, { phase }); }
+        phase = 'finalization';
+        try { await observations; await options.finalize?.(snapshot()); }
+        catch (error) {
+          const rejected = safeNativeFailure(error, { phase });
+          if (!failure || rejected.code === 'StorageFailure') failure = rejected;
         }
+        phase = 'disposal';
+        try { session.dispose(); }
+        catch (error) { failure ??= safeNativeFailure(error, { phase }); }
+        if (failure) throw failure;
       };
       return {
         runtime_session_id: sessionManager.getSessionId(),
@@ -156,6 +172,7 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
           attempted = true;
           try {
             await options.initialize(snapshot(), structuredClone(artifacts));
+            phase = 'resource-loading';
             const settingsManager = sdk.SettingsManager.inMemory(structuredClone(settings));
             const selected = context.plan.plugin_ids.map(id => bindings[id]!);
             const loader = new sdk.DefaultResourceLoader({ cwd: workspace, agentDir: options.agentDir,
@@ -169,32 +186,37 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
             if (loaded.errors.length || loaded.extensions.length !== expectedEntries.size
               || loaded.extensions.some(item => !expectedEntries.delete(pathKey(item.resolvedPath)))
               || expectedEntries.size !== 0) throw nativeFailure();
+            phase = 'session-creation';
             ({ session } = await sdk.createAgentSession({ cwd: workspace, agentDir: options.agentDir,
               settingsManager, sessionManager, resourceLoader: loader, modelRuntime: options.modelRuntime }));
+            phase = 'extension-binding';
             await session.bindExtensions({ mode: 'rpc', onError(error) {
               const nativePath = typeof error === 'object' && error !== null && 'extensionPath' in error
                 && typeof error.extensionPath === 'string' ? error.extensionPath : undefined;
-              const owner = nativePath === undefined ? undefined : entryOwners.get(pathKey(nativePath));
+              const candidate = nativePath === undefined || !isAbsolute(nativePath) ? undefined : entryOwners.get(pathKey(nativePath));
+              const owner = candidate && context.plan.plugin_ids.includes(candidate) ? candidate : undefined;
               const isAspect = owner !== undefined && context.plan.aspect_plugin_ids.includes(owner);
-              if (!isAspect) extensionFailed = true;
+              if (!isAspect) extensionError ??= safeNativeFailure(extensionFailure('NATIVE_EXTENSION_FAILED'),
+                { phase, ...(owner ? { plugin_id: owner } : {}) });
               const event = typeof error === 'object' && error !== null && 'event' in error ? error.event : undefined;
-              const phase = typeof event === 'string' && nativePhases.has(event) ? event : 'unknown';
-              void observe(isAspect ? 'aspect-error' : 'extension-error', { ...(owner ? { plugin_id: owner } : {}), phase });
+              const eventPhase = typeof event === 'string' && nativePhases.has(event) ? event : 'unknown';
+              void observe(isAspect ? 'aspect-error' : 'extension-error', { ...(owner ? { plugin_id: owner } : {}), phase: eventPhase });
             } });
             await observations;
-            if (extensionFailed) throw nativeFailure();
+            if (extensionError) throw extensionError;
             await observe('started');
             initialized = true;
-          } catch (error) { throw safeNativeFailure(error); }
+          } catch (error) { throw safeNativeFailure(error, { phase }); }
         },
         async run() {
           if (!initialized || running || closed || !session) throw nativeFailure();
           running = true;
+          phase = 'domain-run';
           try {
             const result = await options.run(session, snapshot());
-            if (extensionFailed) throw nativeFailure();
+            if (extensionError) throw extensionError;
             return result;
-          } catch (error) { throw safeNativeFailure(error); }
+          } catch (error) { throw safeNativeFailure(error, { phase }); }
         },
         close,
       };

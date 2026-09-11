@@ -8,6 +8,8 @@ export type SafeDiagnostic = {
   reason_code: string;
   input_name?: string;
   artifact_id?: string;
+  plugin_id?: string;
+  phase?: FailurePhase;
   check?: HostReadinessCheck;
   next_step?: string;
   domain_execution_started?: boolean;
@@ -15,6 +17,11 @@ export type SafeDiagnostic = {
 }
 const boundaries = new Set(['artifact-input', 'domain', 'native', 'aspect', 'governance-storage', 'host', 'request']);
 const trusted = new WeakMap<object, SafeDiagnostic>();
+const failurePhases = ['host-validation', 'host-launch', 'configuration', 'adapter-creation',
+  'initialization', 'resource-loading', 'session-creation', 'extension-binding', 'domain-run',
+  'publication', 'shutdown', 'finalization', 'disposal'] as const;
+export type FailurePhase = typeof failurePhases[number];
+export type FailureContext = { phase: FailurePhase; plugin_id?: string };
 const hostSteps = {
   'host-import': 'Check that the local Host module and its dependencies can be imported.',
   'host-contract': 'Export the required Host functions with the documented signatures.',
@@ -29,18 +36,19 @@ const hostSteps = {
 export type HostReadinessCheck = keyof typeof hostSteps;
 
 /** Only reviewed stage names and static recovery hints cross the native boundary. */
-export function hostReadinessFailure(check: HostReadinessCheck): ContainerFailure {
+export function hostReadinessFailure(check: HostReadinessCheck, pluginId?: string): ContainerFailure {
   if (!Object.hasOwn(hostSteps, check)) throw new ContainerFailure('InvalidArguments', 'Unknown Host readiness check.');
   const diagnostic: SafeDiagnostic = { diagnostic_version: 1, boundary: 'host', reason_code: 'HOST_UNAVAILABLE',
-    check, next_step: hostSteps[check], retry_safety: 'not-established' };
+    check, next_step: hostSteps[check], retry_safety: 'not-established',
+    ...(pluginId && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(pluginId) ? { plugin_id: pluginId } : {}) };
   const failure = new ContainerFailure('NativeIntegrationNotReady', 'Native Host readiness check failed.', { diagnostic });
   trusted.set(failure, diagnostic);
   return failure;
 }
 
-export function safeHostReadinessFailure(error: unknown, fallback: HostReadinessCheck): ContainerFailure {
+export function safeHostReadinessFailure(error: unknown, fallback: HostReadinessCheck, pluginId?: string): ContainerFailure {
   const diagnostic = typeof error === 'object' && error !== null ? trusted.get(error) : undefined;
-  return hostReadinessFailure(diagnostic?.check ?? fallback);
+  return hostReadinessFailure(diagnostic?.check ?? fallback, diagnostic?.plugin_id ?? pluginId);
 }
 
 /** Safe returned failure. Trust is process-local and does not survive serialization or cloning. */
@@ -66,7 +74,11 @@ export function readSafeDiagnostic(value: unknown): SafeDiagnostic | undefined {
     result.check = d.check as HostReadinessCheck;
     result.next_step = hostSteps[result.check];
   }
-  for (const field of ['input_name', 'artifact_id'] as const) {
+  if (d.phase !== undefined) {
+    if (!failurePhases.includes(d.phase as FailurePhase)) return undefined;
+    result.phase = d.phase as FailurePhase;
+  }
+  for (const field of ['input_name', 'artifact_id', 'plugin_id'] as const) {
     if (d[field] !== undefined) {
       if (typeof d[field] !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(d[field])) return undefined;
       result[field] = d[field];
@@ -94,10 +106,33 @@ export function registerSafeDiagnostics(boundary: DiagnosticBoundary, reasonCode
   };
 }
 
-export function safeNativeFailure(error: unknown): ContainerFailure {
+/** Context is supplied by the trusted Host, never read from native error properties. */
+export function safeNativeFailure(error: unknown, context?: FailureContext): ContainerFailure {
+  const failure = sanitizeNativeFailure(error);
+  if (context) {
+    const diagnostic = diagnosticFor(failure, 'native');
+    // A more specific inner boundary survives outer wrapping. Do not attach an
+    // outer Plugin to a failure whose inner source was unknown.
+    if (!diagnostic.phase) {
+      const scoped = readSafeDiagnostic({ ...diagnostic, ...context });
+      if (scoped) {
+        const annotated = new ContainerFailure(failure.code, failure.message, { diagnostic: scoped });
+        trusted.set(annotated, structuredClone(scoped));
+        return annotated;
+      }
+    }
+  }
+  return failure;
+}
+
+function sanitizeNativeFailure(error: unknown): ContainerFailure {
   const diagnostic = typeof error === 'object' && error !== null ? trusted.get(error) : undefined;
   if (diagnostic) {
-    const failure = new ContainerFailure('NativeExecutionFailed', 'Managed operation was rejected.', { diagnostic: { ...diagnostic } });
+    const storage = error instanceof ContainerFailure && error.code === 'StorageFailure';
+    const message = storage ? 'Unable to persist or read governance facts.'
+      : diagnostic.reason_code === 'NATIVE_EXECUTION_FAILED' ? 'Native initialization or execution failed.'
+      : 'Managed operation was rejected.';
+    const failure = new ContainerFailure(storage ? 'StorageFailure' : 'NativeExecutionFailed', message, { diagnostic: { ...diagnostic } });
     trusted.set(failure, structuredClone(diagnostic));
     return failure;
   }

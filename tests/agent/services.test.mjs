@@ -318,7 +318,8 @@ test('native readiness preserves safe stage hints without running adapters or a 
   const wrong = structuredClone(f.module.application); wrong.runtime.version = 'wrong';
   await assert.rejects(f.module.validateNativeApplication({ application: wrong }), error => error.details.diagnostic.check === 'sdk-version');
   const missing = structuredClone(f.module.application); missing.plugins[0].native.binding_key = 'missing';
-  await assert.rejects(f.module.validateNativeApplication({ application: missing }), error => error.details.diagnostic.check === 'adapter-registration');
+  await assert.rejects(f.module.validateNativeApplication({ application: missing }), error =>
+    error.details.diagnostic.check === 'adapter-registration' && error.details.diagnostic.plugin_id === 'producer');
   const Loader = f.sdk.DefaultResourceLoader;
   f.sdk.DefaultResourceLoader = class extends Loader { async reload() { throw new Error('private-loader-canary'); } };
   const failed = await connection.check(f.request(), { native_preflight: true });
@@ -327,9 +328,26 @@ test('native readiness preserves safe stage hints without running adapters or a 
   assert.doesNotMatch(JSON.stringify(failed), /private-loader-canary/);
   f.sdk.DefaultResourceLoader = Loader;
   await rm(join(f.root, 'producer.mjs'));
-  assert.equal((await connection.check(f.request(), { native_preflight: true })).blockers[0].diagnostic.check, 'plugin-entry');
+  const missingEntry = (await connection.check(f.request(), { native_preflight: true })).blockers[0].diagnostic;
+  assert.equal(missingEntry.check, 'plugin-entry'); assert.equal(missingEntry.plugin_id, 'producer');
   const launcher = await setup(t, { async checkLauncher() { throw new Error('private-launcher-canary'); } });
   await assert.rejects(launcher.module.validateNativeApplication({ application: launcher.module.application }), error => {
     assert.equal(error.details.diagnostic.check, 'launcher'); assert.doesNotMatch(JSON.stringify(error), /private-launcher-canary/); return true;
   });
+});
+
+test('configuration and adapter creation failures retain their distinct stages without fabricated Session records', async t => {
+  const config = await setup(t, { configure() { throw new Error('synthetic-config-canary'); } });
+  const factory = await setup(t);
+  for (const [f, entry, phase, plugin] of [[config, 'produce', 'configuration', undefined],
+    [factory, 'idle', 'adapter-creation', 'idle']]) {
+    const result = await f.loom.invoke(f.request(entry));
+    assert.equal(result.execution.status, 'unknown');
+    assert.equal(result.diagnostic.phase, phase);
+    assert.equal(result.diagnostic.plugin_id, plugin);
+    assert.equal(result.diagnostic.domain_execution_started, false);
+    assert.deepEqual(await f.store.listSessions(), []);
+    assert.equal(f.state.executed, 0);
+    assert.doesNotMatch(JSON.stringify(result), /synthetic-config-canary|Unselected factory/);
+  }
 });

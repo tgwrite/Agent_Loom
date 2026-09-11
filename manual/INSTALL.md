@@ -10,7 +10,7 @@ projects that refer to it as a local dependency. The archive requires no install
 scripts, compiler, or third-party runtime downloads.
 
 Before installing, compare the archive's SHA-256 with the entry in SHA256SUMS.
-In PowerShell, use `Get-FileHash ./agent-loom-0.1.0-alpha.6.tgz -Algorithm SHA256`;
+In PowerShell, use `Get-FileHash ./agent-loom-0.1.0-alpha.7.tgz -Algorithm SHA256`;
 on Linux, use `sha256sum -c SHA256SUMS`.
 
 ## Command-line tool
@@ -18,7 +18,7 @@ on Linux, use `sha256sum -c SHA256SUMS`.
 From the directory containing the archive:
 
 ```sh
-npm install --global ./agent-loom-0.1.0-alpha.6.tgz --offline --ignore-scripts --no-audit --no-fund
+npm install --global ./agent-loom-0.1.0-alpha.7.tgz --offline --ignore-scripts --no-audit --no-fund
 loom --version
 loom --help
 ```
@@ -33,7 +33,7 @@ In a separate, empty project, copy the archive into the project first:
 
 ```sh
 npm init -y
-npm install ./agent-loom-0.1.0-alpha.6.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
+npm install ./agent-loom-0.1.0-alpha.7.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
 npm pkg set "scripts.loom=loom"
 npm run loom -- --version
 ```

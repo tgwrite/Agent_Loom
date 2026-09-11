@@ -1,7 +1,7 @@
 # Getting started with Agent Loom
 
 For an agent or developer using the installed package. These instructions use the
-public APIs available in **0.1.0-alpha.6**. No framework, plugin or test implementation
+public APIs available in **0.1.0-alpha.7**. No framework, plugin or test implementation
 reading is required. Keep using the project-local CLI so an older global installation
 cannot silently select another version.
 
@@ -34,12 +34,12 @@ GitHub Releases page. In an empty application directory containing the archive:
 
 ```sh
 npm init -y
-npm install ./agent-loom-0.1.0-alpha.6.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
+npm install ./agent-loom-0.1.0-alpha.7.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
 npx --no-install loom --version
 npx --no-install loom --help
 ```
 
-Expect `0.1.0-alpha.6`. Existing projects skip `npm init -y`. The [installation
+Expect `0.1.0-alpha.7`. Existing projects skip `npm init -y`. The [installation
 guide](INSTALL.md) covers checksums, global CLI use and removal. Keep the archive
 at the dependency path recorded in your package manifest and lockfile.
 

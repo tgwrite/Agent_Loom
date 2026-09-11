@@ -1,6 +1,6 @@
 # Connect a native Pi plugin
 
-This tutorial works with **Loom 0.1.0-alpha.6**, Pi **0.85.1**, Node.js >=24.15.0
+This tutorial works with **Loom 0.1.0-alpha.7**, Pi **0.85.1**, Node.js >=24.15.0
 and ESM. It supplies every file for a small native integration. You do not need to
 read Loom or plugin implementation source to complete it.
 
@@ -13,7 +13,7 @@ logic. See [adapting another plugin](#adapting-another-plugin).
 ## Prepare the application directory
 
 First follow [installation](INSTALL.md) in your own project. Keep the project-local
-Loom alpha.6 dependency. Set the project-local Task index as described in
+Loom alpha.7 dependency. Set the project-local Task index as described in
 [Getting started](START_HERE.md#2-install-and-establish-the-version), or choose
 Task names not already registered in your per-user index. Add these pinned dependencies:
 

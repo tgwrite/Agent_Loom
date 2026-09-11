@@ -25,7 +25,7 @@ successful consumption is recorded. Plugins retain their domain tools and policy
 
 ## Install and use
 
-**Current release: 0.1.0-alpha.6.** Download the precompiled `.tgz`, `SHA256SUMS` and
+**Current release: 0.1.0-alpha.7.** Download the precompiled `.tgz`, `SHA256SUMS` and
 installation instructions from [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
 Requires Node.js >=24.12.0 and npm; native plugins may require a newer Node version.
 No npm registry release is available.

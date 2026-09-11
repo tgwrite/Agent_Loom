@@ -505,6 +505,24 @@ stable read. `npm run benchmark:inspection` in a source checkout measures synthe
 100/500-Session histories; timings are local observations, not Plugin performance
 or model-quality evidence.
 
+## Diagnostics and inspection in alpha.7
+
+Alpha.7 includes the standalone user manual in `manual/`. New failures can carry
+an optional safe `diagnostic.phase` and known `diagnostic.plugin_id`; old records
+remain readable without inventing missing facts. Readers that reject additional
+JSON properties should accept these optional fields before upgrading.
+
+Task summaries now include `execution`, `observation`, `participants`,
+`diagnostic` and `business_acceptance` references per Session. The existing
+`status` remains the stored status; use `execution.status` and
+`observation.outcome_confirmed` to assess terminal evidence. Outputs add `sha256`;
+consumption rows add record and consumer identity plus timestamps.
+
+See [troubleshooting](TROUBLESHOOTING.md#diagnostics-and-summary-additions-in-alpha7)
+for phase meanings, primary completion followed by Session failure, and evidence
+verification. These are additive diagnostic/query changes, not Task migration or
+business acceptance. Keep unknown outcomes blocked until reconciled.
+
 ## Contract corrections in alpha.6
 
 Exclusive Invoke now retains its durable writer lock when startup or outcome

@@ -1,6 +1,6 @@
 import { mkdir, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { ContainerFailure, resolveProfile, validateApplication, hostReadinessFailure, safeHostReadinessFailure } from '../../container-core/src/index.ts';
+import { ContainerFailure, resolveProfile, validateApplication, hostReadinessFailure, safeHostReadinessFailure, safeNativeFailure } from '../../container-core/src/index.ts';
 import type { NativeReadinessReport } from '../../container-core/src/index.ts';
 import type { ApplicationDefinition, LocalTaskStore, SessionPlan, SessionHost, PluginDescriptor, SessionProfile } from '../../container-core/src/index.ts';
 import { createPiApplicationHost } from './application-host.ts';
@@ -40,7 +40,7 @@ export function createPiHostModule(options: PiHostModuleOptions) {
     return Object.fromEntries((profileId ? resolveProfile(application, profileId).plugins : application.plugins).map(plugin => {
       const registration = registrations[plugin.native.binding_key];
       if (!registration || (plugin.role === 'domain' && typeof registration.create !== 'function'))
-        throw hostReadinessFailure('adapter-registration');
+        throw hostReadinessFailure('adapter-registration', plugin.id);
       return [plugin.id, { entry: registration.entry,
         ...(registration.prompt_paths ? { prompt_paths: registration.prompt_paths } : {}) }];
     }));
@@ -103,16 +103,20 @@ export function createPiHostModule(options: PiHostModuleOptions) {
         async launch(plan, workspace, binding) {
           await validate(plan);
           const bindings = bindingsFor(application, plan.profile_id);
-          const config = await options.configure({ store });
+          let config: Awaited<ReturnType<PiHostModuleOptions['configure']>>;
+          try { config = await options.configure({ store }); }
+          catch (error) { throw safeNativeFailure(error, { phase: 'configuration' }); }
           const adapters: Record<string, PiApplicationAdapter> = {};
           for (const plugin of resolveProfile(application, plan.profile_id).plugins) {
             const registration = registrations[plugin.native.binding_key]!;
             const scoped = structuredClone(plan);
             if (plugin.role === 'aspect' && registration.request_mapping !== 'v1') delete scoped.request;
-            adapters[plugin.native.binding_key] = {
-              ...await registration.create?.({ store, plan: scoped }), ...bindings[plugin.id]!,
-              ...(registration.request_mapping ? { request_mapping: registration.request_mapping } : {}),
-            };
+            try {
+              adapters[plugin.native.binding_key] = {
+                ...await registration.create?.({ store, plan: scoped }), ...bindings[plugin.id]!,
+                ...(registration.request_mapping ? { request_mapping: registration.request_mapping } : {}),
+              };
+            } catch (error) { throw safeNativeFailure(error, { phase: 'adapter-creation', plugin_id: plugin.id }); }
           }
           await mkdir(agentDir, { recursive: true });
           const host = createPiApplicationHost({ ...config, store, sdk: options.sdk,
