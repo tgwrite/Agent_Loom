@@ -1,4 +1,5 @@
 import { ContainerFailure } from './failure/index.ts';
+import { readSafeDiagnostic } from './failure/diagnostic.ts';
 import type { FailureRecord } from './failure/index.ts';
 
 export function requireRecord(condition: unknown, message: string): asserts condition {
@@ -31,6 +32,7 @@ export function jsonValue(value: unknown, seen = new Set<object>()): void {
 }
 
 export function validateFailure(value: FailureRecord): void {
+  if (value.diagnostic !== undefined) requireRecord(readSafeDiagnostic(value.diagnostic) !== undefined, 'Invalid safe diagnostic.');
   text(value.code);
   text(value.message);
   text(value.source);

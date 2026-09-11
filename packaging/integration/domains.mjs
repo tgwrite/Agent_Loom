@@ -28,7 +28,9 @@ export function definition(id) {
   return { id, version: '1', runtime: { id: 'pi', version: 'synthetic' },
     plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'pi', binding_key: 'domain' },
       capabilities: [], produces: [contract, { type: `${id}.result`, version: '1' }] }],
-    profiles: [{ id: 'produce', primary: 'domain', aspects: [], workspace: 'producer', requirements: [] },
-      { id: 'consume', primary: 'domain', aspects: [], workspace: 'consumer', requirements: [{ ...contract, verification_status: 'READY' }] }],
+    profiles: [{ id: 'produce', primary: 'domain', aspects: [], workspace: 'producer', requirements: [],
+        entry: { id: `${id}.produce`, purpose: 'Accept a synthetic source snapshot', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] } },
+      { id: 'consume', primary: 'domain', aspects: [], workspace: 'consumer', requirements: [{ ...contract, verification_status: 'READY', input_name: 'source' }],
+        entry: { id: `${id}.consume`, purpose: 'Derive a synthetic result from an accepted source', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] } }],
   };
 }

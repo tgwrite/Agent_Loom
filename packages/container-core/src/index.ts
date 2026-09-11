@@ -14,3 +14,5 @@ export * from './task/index.ts';
 export * from './paths.ts';
 export * from './governance.ts';
 export * from './inspection.ts';
+export * from './invocation.ts';
+export * from './failure/diagnostic.ts';

@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { invocationRequirements } from './invocation.ts';
+import type { AgentRequest } from './invocation.ts';
+import { diagnosticFor, safeNativeFailure } from './failure/diagnostic.ts';
 import { resolveProfile } from './application/index.ts';
 import type { ArtifactRef, ArtifactConsumptionRecord } from './artifact/index.ts';
 import type { ActorRef, RuntimeRef } from './actor/index.ts';
@@ -9,6 +13,8 @@ import { LocalTaskStore } from './storage/index.ts';
 import { resolveTaskPath, taskRelativePath } from './paths.ts';
 
 export interface SessionPlan {
+  request?: AgentRequest;
+  named_artifacts?: Readonly<Record<string, ArtifactRef>>;
   task_id: string;
   profile_id: string;
   workspace: string;
@@ -19,7 +25,7 @@ export interface SessionPlan {
 }
 
 /** Side-effect-free plan. It never creates a Session, records consumption, or schedules a Plugin. */
-export async function prepareSession(store: LocalTaskStore, profileId: string, workspace?: string): Promise<SessionPlan> {
+export async function prepareSession(store: LocalTaskStore, profileId: string, workspace?: string, request?: AgentRequest): Promise<SessionPlan> {
   const { profile, plugins } = resolveProfile(store.task.application, profileId);
   const selectedWorkspace = workspace ?? profile.workspace ?? '.';
   taskRelativePath(selectedWorkspace, true);
@@ -30,10 +36,17 @@ export async function prepareSession(store: LocalTaskStore, profileId: string, w
   if (profile.requirements.length && !profile.primary) {
     throw new ContainerFailure('InvalidDefinition', 'Artifact initialization needs an explicit primary consumer.');
   }
-  for (const requirement of profile.requirements) artifacts.push(await store.resolveArtifact(requirement));
+  const named: Record<string, ArtifactRef> = {};
+  for (const requirement of invocationRequirements(profile, store.task.id, request)) {
+    const artifact = await store.resolveArtifact(requirement);
+    artifacts.push(artifact);
+    if (requirement.input_name) Object.defineProperty(named, requirement.input_name, { value: artifact, enumerable: true });
+  }
   return { task_id: store.task.id, profile_id: profile.id, workspace: selectedWorkspace,
     ...(profile.primary ? { primary_plugin_id: profile.primary } : {}),
-    aspect_plugin_ids: [...profile.aspects], plugin_ids: plugins.map((plugin) => plugin.id), artifacts };
+    aspect_plugin_ids: [...profile.aspects], plugin_ids: plugins.map((plugin) => plugin.id), artifacts,
+    ...(request ? { request: structuredClone(request) } : {}),
+    ...(Object.keys(named).length ? { named_artifacts: named } : {}) };
 }
 
 export interface NativeSessionHandle {
@@ -45,6 +58,7 @@ export interface NativeSessionHandle {
 }
 
 export interface SessionHost {
+  request_mapping?: 'v1';
   runtime: RuntimeRef;
   validate(plan: SessionPlan): Promise<void>;
   /** Opens the native session without starting domain execution; run() starts execution. */
@@ -52,27 +66,31 @@ export interface SessionHost {
 }
 
 async function nativeCall<T>(operation: () => Promise<T>): Promise<T> {
-  try { return await operation(); } catch {
-    throw new ContainerFailure('NativeExecutionFailed', 'Native initialization or execution failed.');
-  }
+  try { return await operation(); } catch (error) { throw safeNativeFailure(error); }
 }
 
 /** Drives only the user-selected Session. Native adapters retain initialization and domain trust. */
 export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
-  host: SessionHost, actor: ActorRef): Promise<SessionRunRecord> {
+  host: SessionHost, actor: ActorRef,
+  observe?: (event: { session_id: string; phase: 'allocated' | 'domain-started' }) => void): Promise<SessionRunRecord> {
   // Rebuild from the immutable Task snapshot rather than trusting a caller-supplied plan.
-  const prepared = await prepareSession(store, plan.profile_id, plan.workspace);
-  if (JSON.stringify(prepared) !== JSON.stringify(plan)) {
+  const prepared = await prepareSession(store, plan.profile_id, plan.workspace, plan.request);
+  if (!isDeepStrictEqual(prepared, plan)) {
     throw new ContainerFailure('InvalidRecord', 'Session plan no longer matches the Task.');
   }
   if (host.runtime.name !== store.task.application.runtime.id || host.runtime.version !== store.task.application.runtime.version) {
     throw new ContainerFailure('NativeIntegrationNotReady', 'Runtime does not match the Task Application target.');
   }
+  if (prepared.request && host.request_mapping !== 'v1')
+    throw new ContainerFailure('NativeIntegrationNotReady', 'Host does not support invocation request mapping.');
   await nativeCall(() => host.validate(structuredClone(prepared)));
   const sessionId = randomUUID();
+  const observed = (phase: 'allocated' | 'domain-started') => { try { observe?.({ session_id: sessionId, phase }); } catch { /* optional observer */ } };
+  observed('allocated');
   const handle = await nativeCall(() => host.launch(structuredClone(prepared), resolveTaskPath(store.taskRoot, prepared.workspace),
     { session_id: sessionId, task_root: store.taskRoot, actor: structuredClone(actor) }));
   const session: SessionRunRecord = { id: sessionId, task_id: prepared.task_id,
+    ...(prepared.request ? { request: structuredClone(prepared.request) } : {}),
     profile_id: prepared.profile_id, workspace: prepared.workspace,
     ...(prepared.primary_plugin_id ? { primary_plugin_id: prepared.primary_plugin_id } : {}),
     aspect_plugin_ids: prepared.aspect_plugin_ids, plugin_ids: prepared.plugin_ids,
@@ -80,6 +98,7 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
     status: 'running', started_at: new Date().toISOString() };
   let recorded = false;
   let closed = false;
+  let domainStarted = false;
   try {
     await store.startSession(session);
     recorded = true;
@@ -91,21 +110,32 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
         artifact_id: artifact.id, sha256: artifact.sha256, consumed_at: new Date().toISOString() };
       await store.recordConsumption(consumption);
     }
+    if (prepared.request) await store.appendEvent({ id: randomUUID(), type: 'runtime.loom.domain-started', timestamp: new Date().toISOString(),
+      task_id: prepared.task_id, session_id: session.id, actor_id: actor.id, source: 'container-core',
+      correlation_id: prepared.request?.request_id ?? session.id, payload: {} });
+    domainStarted = true;
+    observed('domain-started');
     const result = await nativeCall(() => handle.run());
     closed = true;
     await nativeCall(() => handle.close());
-    await store.settleSession(session.id, result.status, new Date().toISOString(), result.failure);
+    await store.settleSession(session.id, result.status, new Date().toISOString(), prepared.request && result.status === 'failed'
+      ? { code: 'NativeExecutionFailed', message: 'Runtime reported a failed Session.', source: 'native-adapter',
+        timestamp: new Date().toISOString(), diagnostic: diagnosticFor(undefined, 'native', domainStarted) }
+      : result.failure);
     return await store.getSession(session.id);
   } catch (error) {
     // Give the Bridge a chance to flush shutdown observations before terminal settlement.
     if (!closed) {
       closed = true;
-      try { await handle.close(); } catch { /* preserve the primary failure */ }
+      try { await handle.close(); } catch (cleanup) {
+        if (cleanup instanceof ContainerFailure && cleanup.code === 'StorageFailure') error = cleanup;
+      }
     }
     if (recorded && (await store.getSession(session.id)).status === 'running') {
       await store.settleSession(session.id, 'failed', new Date().toISOString(), {
         code: 'NativeExecutionFailed', message: 'Native initialization or execution failed.',
         source: 'native-adapter', timestamp: new Date().toISOString(),
+        diagnostic: diagnosticFor(error, 'native', domainStarted),
       });
     }
     // Native error text may include private paths, credentials, or domain context.

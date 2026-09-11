@@ -1,8 +1,10 @@
 import type { ActorRef, RuntimeRef } from '../actor/index.ts';
 import type { ArtifactRequirement } from '../artifact/index.ts';
 import type { FailureRecord } from '../failure/index.ts';
+import type { AgentRequest, EntryContract } from '../invocation.ts';
 
 export interface SessionProfile {
+  entry?: EntryContract;
   id: string;
   primary?: string;
   aspects: readonly string[];
@@ -11,6 +13,7 @@ export interface SessionProfile {
 }
 
 export interface SessionRunRecord {
+  request?: AgentRequest;
   id: string;
   task_id: string;
   profile_id: string;

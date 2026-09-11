@@ -75,15 +75,49 @@ try {
   assert(snapshot.sessions.every(s => s.status === 'completed'));
   run(process.execPath, [cli, 'session', 'start', '--task', 'install-example', '--root', taskRoot, '--profile', 'produce'], unrelated, 1);
   assert.equal(JSON.parse(logs.at(-1).stderr.trim()).error.code, 'NativeIntegrationNotReady');
+  // Three fresh process-driven Tasks per domain exercise the installed facade.
+  // These are synthetic cold starts, not independent Agent blind trials.
+  for (const domain of ['measurement', 'catalog']) for (let repetition = 0; repetition < 3; repetition++) {
+    const id = `agent-${domain}-${repetition}`, taskRoot = join(root, id);
+    const app = join(installed, 'examples/integration', `${domain}.mjs`);
+    run(process.execPath, [cli, 'task', 'create', '--app', app, '--root', taskRoot, '--name', id,
+      '--input', join(installed, 'examples/integration', `${domain}.json`)], unrelated);
+    const args = ['--task', id, '--root', taskRoot, '--json'];
+    const cards = JSON.parse(run(process.execPath, [cli, 'agent', 'discover', ...args], unrelated));
+    assert(cards.entries.some(e => e.entry_id === `${domain}.consume`));
+    const requestFile = join(root, `${id}-request.json`);
+    const request = { schema_version: 1, request_id: `${id}-consume`, task_id: id, entry_id: `${domain}.consume` };
+    await writeFile(requestFile, JSON.stringify(request));
+    const blocked = JSON.parse(run(process.execPath, [cli, 'agent', 'invoke', ...args, '--request', requestFile], unrelated, 1));
+    assert.equal(blocked.execution.status, 'not-started'); assert.equal(blocked.session_id, null);
+    const data = JSON.parse(await readFile(join(installed, 'examples/integration', `${domain}.json`), 'utf8'));
+    await writeFile(requestFile, JSON.stringify({ ...request, request_id: `${id}-produce`, entry_id: `${domain}.produce`, data }));
+    const produced = JSON.parse(run(process.execPath, [cli, 'agent', 'invoke', ...args, '--request', requestFile], unrelated));
+    request.inputs = { source: { artifact_id: produced.artifacts[0].id } };
+    await writeFile(requestFile, JSON.stringify(request));
+    const check = JSON.parse(run(process.execPath, [cli, 'agent', 'check', ...args, '--request', requestFile], unrelated));
+    assert.equal(check.blockers.length, 0); assert.equal(check.native_preflight.status, 'not-checked');
+    const result = JSON.parse(run(process.execPath, [cli, 'agent', 'invoke', ...args, '--request', requestFile], unrelated));
+    assert.equal(result.execution.status, 'completed'); assert.equal(result.business_acceptance.status, 'not-evaluated');
+    const facts = JSON.parse(run(process.execPath, [cli, 'agent', 'inspect', ...args, '--session', result.session_id], unrelated));
+    assert.equal(facts.sessions[0].request_id, request.request_id);
+  }
+  await writeFile(join(project, 'agent-import.mjs'), `import { connectLoom } from 'agent-loom/agent';
+    const loom = await connectLoom({ taskRoot: process.argv[2], taskId: 'agent-measurement-0' });
+    console.log(JSON.stringify(await loom.inspect()));`);
+  const sdkFacts = JSON.parse(run(process.execPath, [join(project, 'agent-import.mjs'), join(root, 'agent-measurement-0')], unrelated));
+  assert.equal(sdkFacts.history, 'readable'); assert.equal(sdkFacts.readiness.host_delivery, 'missing');
   const ts = join(project, 'node_modules/typescript');
   // Copy only the pinned test compiler, never the checkout or its node_modules resolution tree.
   await cp(join(repo, 'node_modules/typescript'), ts, { recursive: true });
   await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, type ArtifactRef } from 'agent-loom';
-import { createPiApplicationHost, createPiHostModule, readArtifactFile, readTaskInput, type PiApplicationHostOptions } from 'agent-loom/runtime-pi';
+import { connectLoom, createRequest, type AgentRequest } from 'agent-loom/agent';
+import { createPiApplicationHost, createPiHostModule, definePiApplicationModule, readArtifactFile, readTaskInput, type PiApplicationHostOptions } from 'agent-loom/runtime-pi';
 const open: (root: string) => Promise<LocalTaskStore> = LocalTaskStore.open;
 const host: (options: PiApplicationHostOptions) => ReturnType<typeof createPiApplicationHost> = createPiApplicationHost;
 const id = (ref: ArtifactRef): string => ref.id;
-void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput];\n`);
+const request: AgentRequest = createRequest('task', 'entry');
+void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request];\n`);
   run(process.execPath, [join(ts, 'bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2023', 'consumer.ts']);
   const beforeUninstall = JSON.stringify(snapshot);
   npm(['uninstall', '--global', 'agent-loom', '--prefix', prefix, '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);

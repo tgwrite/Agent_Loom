@@ -1,6 +1,6 @@
 {
   "name": "agent-loom",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": true,
   "description": "A minimal application and task governance container for existing Agent Plugins.",
   "license": "Apache-2.0",
@@ -23,6 +23,10 @@
     "./runtime-pi": {
       "types": "./dist/packages/runtime-pi/src/index.d.ts",
       "import": "./dist/packages/runtime-pi/src/index.js"
+    },
+    "./agent": {
+      "types": "./dist/packages/container-core/src/agent.d.ts",
+      "import": "./dist/packages/container-core/src/agent.js"
     }
   },
   "engines": {

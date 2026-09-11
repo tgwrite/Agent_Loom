@@ -24,3 +24,11 @@ It maps business changes to files, describes the reusable Host and input helpers
 and includes two executable synthetic domain examples. Use `app validate --explain`
 to inspect composition and `task inspect --summary` to see governance outcomes.
 Full inspection JSON and existing Host interfaces remain supported.
+
+
+The alpha.3 `agent-loom/agent` export provides Discover, Describe, Check, Invoke and
+Inspect over the existing governance Kernel. Run `loom --help` for commands and
+see `AGENT_GUIDE.md` for request mapping. Requests and receipts are versioned,
+named bindings are rechecked at execution, and Pi factories are selected per
+Profile. This local candidate does not establish native compatibility or
+independent Agent experience acceptance.

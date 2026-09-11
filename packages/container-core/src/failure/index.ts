@@ -24,6 +24,7 @@ export class ContainerFailure extends Error {
 }
 
 export interface FailureRecord {
+  diagnostic?: import('./diagnostic.ts').SafeDiagnostic;
   code: string;
   message: string;
   source: string;

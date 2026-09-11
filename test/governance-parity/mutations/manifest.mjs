@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 const host = 'packages/runtime-pi/src/application-host.ts';
 const service = 'packages/container-core/src/governance.ts';
 const store = 'packages/container-core/src/storage/index.ts';
-const validation = 'packages/container-core/src/storage/validation.ts';
+const validation = 'packages/container-core/src/failure/observer.ts';
 const cr = 'test/governance-parity/control/runtime.mjs', cs = 'test/governance-parity/control/store.mjs';
 const all = ['a', 'b', 'c'];
 async function patch(file, before, after) {
@@ -29,6 +29,14 @@ async function prematureControl() {
   const source = await readFile(cr, 'utf8'), start = source.indexOf('  finally {\n    if (native)'), end = source.indexOf("  requireValue(outcome === 'completed'", start);
   const before = source.slice(start, end), settlement = "  await store.settleSession(id, outcome, new Date().toISOString());";
   return { file: cr, before, after: before.replace(settlement, '').replace('  finally {', `  finally {\n    if (recorded) ${settlement.trim()}`) };
+}
+async function prematureLoom() {
+  const source = await readFile(service, 'utf8');
+  const close = '    await nativeCall(() => handle.close());';
+  const start = source.indexOf(close), end = source.indexOf('    return await store.getSession(session.id);', start);
+  if (start < 0 || end < 0) throw new Error('Settlement boundary missing');
+  const before = source.slice(start, end);
+  return { file: service, before, after: before.replace(close, '') + close + '\n' };
 }
 export const mutations = [
   { id: 'M01', apps: all,
@@ -60,8 +68,8 @@ export const mutations = [
     loom: await patch(store, 'for (const artifact of artifacts) {\n      this.#assertTask(artifact.task_id);', 'for (const artifact of artifacts) {\n      // Persisted Artifact Task membership omitted.'),
     control: await patch(cs, 'id(value.id); requireValue(value.task_id === state.task.id); hash(value.sha256);', 'id(value.id); hash(value.sha256);') },
   { id: 'M10', apps: all,
-    loom: await patch(host, "await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass));\n          continue;",
-      "await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass));\n          outcome = 'failed'; domainError = new Error('Aspect failure'); continue;"),
+    loom: await patch(host, "await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass, error));\n          continue;",
+      "await enqueue(() => aspectFailure(context, pluginId, 'after-run', failureClass, error));\n          outcome = 'failed'; domainError = new Error('Aspect failure'); continue;"),
     control: await patch(cr, "catch { await pending; await observer(plugin.id, 'after-run', failureClass); }", "catch { await pending; await observer(plugin.id, 'after-run', failureClass); outcome = 'failed'; }") },
   { id: 'M11', apps: all,
     loom: await patch(host, "await observe('aspect-completed', context, { plugin_id: pluginId, phase: 'after-run' });",
@@ -77,8 +85,7 @@ export const mutations = [
     control: await patch(cs, 'requireValue(JSON.stringify(state.task) === JSON.stringify(this.snapshot)); return state;',
       "requireValue(JSON.stringify(state.task) === JSON.stringify(this.snapshot));\n    for (const a of state.artifacts) if (a.producer_phase === undefined) { a.producer_phase = 'domain-run'; a.native_runtime_session_id = 'native-producer'; }\n    return state;") },
   { id: 'M15', apps: all,
-    loom: await patch(service, '    await nativeCall(() => handle.close());\n    await store.settleSession(session.id, result.status, new Date().toISOString(), result.failure);',
-      '    await store.settleSession(session.id, result.status, new Date().toISOString(), result.failure);\n    await nativeCall(() => handle.close());'),
+    loom: await prematureLoom(),
     control: await prematureControl() },
   { id: 'M16', apps: all,
     loom: await patch(host, 'const publications = await primary(context).run!(session, domainContext(context));',
@@ -86,7 +93,7 @@ export const mutations = [
     control: await patch(cr, 'try { await publish(plugins[0], await primary.run(native, context)); requireValue(!domainFailed); }',
       'try { const publications = await primary.run(native, context); await native.prompt(JSON.stringify(store.task)); await publish(plugins[0], publications); requireValue(!domainFailed); }') },
   { id: 'M17', apps: all,
-    loom: await patch(service, 'artifacts: artifacts.map((artifact) => ({ ...artifact,',
+    loom: await patch('packages/container-core/src/inspection.ts', 'artifacts: artifacts.map((artifact) => ({ ...artifact,',
       'artifacts: artifacts.map(({ producer_phase, native_runtime_session_id, ...artifact }) => ({ ...artifact,'),
     control: await patch(cs, 'artifacts: state.artifacts.map(a => ({ ...a,', 'artifacts: state.artifacts.map(({ producer_phase, native_runtime_session_id, ...a }) => ({ ...a,') },
   { id: 'M18', apps: ['c'], reason: 'Both owners route all A/B/C publications, resolution and inspection through common implementations. No actual C-only migration branch exists; no branch is invented.' },

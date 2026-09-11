@@ -63,6 +63,18 @@ data. It preserves local evidence under ignored `.test-tmp/packages/`.
 See [installation instructions](packaging/INSTALL.md). This is a local alpha
 candidate; real webpage/report/review acceptance is still required before release.
 
+## Agent service preview
+
+The local alpha.3 candidate adds `agent-loom/agent` and `loom agent` discovery,
+description, checks, invocation and inspection. Entries are existing Profiles;
+requests use named Artifact identities and are saved per Session. Pi creates only
+selected adapters, and safe failure reasons survive into receipts. Execution and
+business acceptance remain separate. Old CLI/SDK entrypoints are retained.
+
+See the [Agent guide](packaging/AGENT_GUIDE.md#agent-services-in-alpha3) for the
+request contract, Host opt-in and executable examples. Synthetic regression tests
+do not establish better Agent performance; independent blind trials are pending.
+
 ## CLI development preview
 
 Application developers and coding agents can start with the

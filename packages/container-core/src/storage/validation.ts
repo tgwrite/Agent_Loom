@@ -4,6 +4,7 @@ export { identifier, requireRecord, validateFailure } from '../record-validation
 import { validateObserverFailure } from '../failure/observer.ts';
 import type { ArtifactConsumptionRecord } from '../artifact/index.ts';
 import { validateApplication } from '../application/index.ts';
+import { validateRequest } from '../invocation.ts';
 import { taskRelativePath } from '../paths.ts';
 import type { EventEnvelope } from '../event/index.ts';
 import type { SessionRunRecord } from '../session/index.ts';
@@ -20,6 +21,7 @@ export function validateTask(value: TaskRecord): void {
 }
 
 export function validateSession(value: SessionRunRecord): void {
+  if (value.request !== undefined) { validateRequest(value.request); requireRecord(value.request.task_id === value.task_id, 'Request Task identity mismatch.'); }
   identifier(value.id);
   identifier(value.task_id);
   identifier(value.profile_id);

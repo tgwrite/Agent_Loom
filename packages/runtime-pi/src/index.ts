@@ -3,7 +3,7 @@ import { ContainerFailure } from '../../container-core/src/index.ts';
 
 export { createPiSessionHost } from './session-host.ts';
 export { createPiApplicationHost } from './application-host.ts';
-export { createPiHostModule } from './host-module.ts';
+export { createPiHostModule, definePiApplicationModule } from './host-module.ts';
 export type { PiAdapterHooks, PiAdapterRegistration, PiHostModuleOptions } from './host-module.ts';
 export { readArtifactFile, readTaskInput } from './inputs.ts';
 export type { NativePublication, PiApplicationAdapter, PiApplicationContext, PiApplicationHostOptions } from './application-host.ts';

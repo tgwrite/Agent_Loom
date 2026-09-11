@@ -1,6 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { ContainerFailure } from '../../container-core/src/index.ts';
+import { ContainerFailure, safeNativeFailure } from '../../container-core/src/index.ts';
 import type { ArtifactRef, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/index.ts';
 
 /** The small SDK surface exercised by the bridge; the SDK is supplied locally. */
@@ -183,7 +183,7 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
             if (extensionFailed) throw nativeFailure();
             await observe('started');
             initialized = true;
-          } catch { throw nativeFailure(); }
+          } catch (error) { throw safeNativeFailure(error); }
         },
         async run() {
           if (!initialized || running || closed || !session) throw nativeFailure();
@@ -192,7 +192,7 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
             const result = await options.run(session, snapshot());
             if (extensionFailed) throw nativeFailure();
             return result;
-          } catch { throw nativeFailure(); }
+          } catch (error) { throw safeNativeFailure(error); }
         },
         close,
       };

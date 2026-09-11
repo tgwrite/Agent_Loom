@@ -1,3 +1,4 @@
+import { describeEntry } from '../../container-core/src/agent.ts';
 import { taskInspectionView } from '../../container-core/src/index.ts';
 import type { ApplicationDefinition, ContainerFailure, TaskSnapshot } from '../../container-core/src/index.ts';
 
@@ -10,6 +11,7 @@ export function summarizeTask(snapshot: TaskSnapshot) {
     sessions: [...view.sessions].sort((a, b) => a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id))
       .map(session => ({ id: session.id, profile: session.profile_id, started_at: session.started_at,
       finished_at: session.finished_at ?? null,
+      ...(session.request ? { request_id: session.request.request_id, entry_id: session.request.entry_id } : {}),
       status: session.status, primary: session.primary_plugin_id, aspects: session.aspect_plugin_ids,
       failure: session.failure ?? null, aspect_failures: session.aspect_failures,
       consumed: session.consumed.map(record => ({ artifact_id: record.artifact_id,
@@ -42,7 +44,7 @@ export function printTaskSummary(summary: ReturnType<typeof summarizeTask>): voi
 export function explainApplication(application: ApplicationDefinition, hostConfigured: boolean) {
   return { schema_version: 1, runtime: application.runtime, host_configured: hostConfigured,
     execution: 'explicit-session-start', native_loading: 'host-defined',
-    profiles: application.profiles.map(profile => ({ id: profile.id, workspace: profile.workspace ?? '.',
+    profiles: application.profiles.map(profile => ({ id: profile.id, entry: describeEntry(application, profile.entry?.id ?? profile.id), workspace: profile.workspace ?? '.',
       primary: profile.primary ?? null, aspects: profile.aspects, requirements: profile.requirements,
       plugins: [profile.primary, ...profile.aspects].filter((id): id is string => id !== undefined).map(id => {
         const plugin = application.plugins.find(plugin => plugin.id === id)!;

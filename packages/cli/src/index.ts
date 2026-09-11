@@ -1,3 +1,5 @@
+import { connectLoom, discoverEntries, describeEntry } from '../../container-core/src/agent.ts';
+import type { AgentRequest } from '../../container-core/src/invocation.ts';
 import { dirname, resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -9,6 +11,12 @@ import { readHostBinding, saveHostBinding } from './host-binding.ts';
 import { diagnose, explainApplication, printTaskSummary, summarizeTask } from './experience.ts';
 
 const help = `Agent Loom (development preview)
+
+loom agent discover [--app <application.ts> | --task <id> --root <directory>] [--id <entry>] [--name <text>] [--tag <tag>] [--input-type <type>] [--output-type <type>] [--json]
+loom agent describe <entry> [--app <application.ts> | --task <id> --root <directory>] [--json]
+loom agent check --task <id> --request <json-file> [--root <directory>] [--host-module <file>] [--native-preflight] [--json]
+loom agent invoke --task <id> --request <json-file> [--root <directory>] [--host-module <file>] [--json]
+loom agent inspect --task <id> [--root <directory>] [--entry <entry>] [--session <id>] [--request-id <id>] [--artifact <id>] [--json]
 
 loom app validate <application.ts> [--definition-only | --host-module <file>] [--explain] [--json]
 loom task create --app <application.ts> --root <directory> --name <id> [--input <json-file>] [--host-module <file>] [--json]
@@ -34,7 +42,7 @@ function argumentsFor(args: string[], allowed: readonly string[]) {
     const arg = args[i]!;
     if (!arg.startsWith('--')) { positionals.push(arg); continue; }
     if (!allowed.includes(arg) || flags.has(arg)) throw new ContainerFailure('InvalidArguments', 'Unknown or duplicate option.');
-    if (['--json', '--definition-only', '--dry-run', '--summary', '--explain'].includes(arg)) flags.set(arg, true);
+    if (['--json', '--definition-only', '--dry-run', '--summary', '--explain', '--native-preflight'].includes(arg)) flags.set(arg, true);
     else {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new ContainerFailure('InvalidArguments', 'Option requires a value.');
@@ -137,6 +145,11 @@ export async function main(args: string[]): Promise<number> {
       return 0;
     }
     const allowed: Record<string, string[]> = {
+      'agent discover': ['--app', '--task', '--root', '--id', '--name', '--tag', '--input-type', '--output-type', '--json'],
+      'agent describe': ['--app', '--task', '--root', '--json'],
+      'agent check': ['--task', '--root', '--request', '--host-module', '--native-preflight', '--json'],
+      'agent invoke': ['--task', '--root', '--request', '--host-module', '--json'],
+      'agent inspect': ['--task', '--root', '--entry', '--session', '--request-id', '--artifact', '--json'],
       'app validate': ['--definition-only', '--host-module', '--explain', '--json'],
       'task create': ['--app', '--root', '--name', '--input', '--host-module', '--json'],
       'task inspect': ['--root', '--summary', '--json'],
@@ -147,7 +160,7 @@ export async function main(args: string[]): Promise<number> {
     if (!allowed[command]) throw new ContainerFailure('InvalidArguments', 'Unknown command. Use loom --help.');
     if (args.length === 3 && args[2] === '--help') { console.log(help); return 0; }
     const options = argumentsFor(args.slice(2), allowed[command]);
-    const needsPositional = !['task create', 'session start'].includes(command);
+    const needsPositional = !['task create', 'session start', 'agent discover', 'agent check', 'agent invoke', 'agent inspect'].includes(command);
     if (options.positionals.length !== (needsPositional ? 1 : 0)) {
       throw new ContainerFailure('InvalidArguments', 'Incorrect number of positional arguments.');
     }
@@ -169,6 +182,57 @@ export async function main(args: string[]): Promise<number> {
       return 0;
     }
     const catalog = new TaskCatalog();
+    if (command.startsWith('agent ')) {
+      const filter = { ...(options.value('--id') ? { id: options.value('--id')! } : {}),
+        ...(options.value('--name') ? { name: options.value('--name')! } : {}),
+        ...(options.value('--tag') ? { tag: options.value('--tag')! } : {}),
+        ...(options.value('--input-type') ? { input_type: options.value('--input-type')! } : {}),
+        ...(options.value('--output-type') ? { output_type: options.value('--output-type')! } : {}) };
+      const appFile = options.value('--app');
+      if (appFile) {
+        if (options.value('--task') || options.value('--root')) throw new ContainerFailure('InvalidArguments', 'Choose an Application or a Task.');
+        const { application } = await loadApplication(appFile);
+        output(command === 'agent discover' ? discoverEntries(application, filter) : describeEntry(application, options.positionals[0]!), true);
+        return 0;
+      }
+      const store = await catalog.open(options.required('--task'), options.value('--root'));
+      if (command === 'agent discover') { output(discoverEntries(store.task.application, filter), true); return 0; }
+      if (command === 'agent describe') { output(describeEntry(store.task.application, options.positionals[0]!), true); return 0; }
+      let selectedHost = options.value('--host-module');
+      let invalidHost = false;
+      if (!selectedHost) {
+        try { selectedHost = await readHostBinding(store); }
+        catch (error) {
+          if (!(error instanceof ContainerFailure) || error.code !== 'NativeIntegrationNotReady') throw error;
+          invalidHost = true;
+        }
+      }
+      const hostPath = () => {
+        if (!selectedHost) throw new ContainerFailure('NativeIntegrationNotReady', 'Host delivery is invalid.');
+        return selectedHost;
+      };
+      const loom = await connectLoom({ taskRoot: store.taskRoot, taskId: store.task.id,
+        ...(selectedHost || invalidHost ? { host: { actor: { id: 'local-operator' }, delivery: invalidHost ? 'invalid' as const : 'declared' as const,
+          createHost: () => loadHost(hostPath(), store),
+          nativePreflight: async () => validateNativeHost(hostPath(), store.task.application),
+        } } : {}) });
+      if (command === 'agent inspect') {
+        output(await loom.inspect({ ...(options.value('--entry') ? { entry_id: options.value('--entry')! } : {}),
+          ...(options.value('--session') ? { session_id: options.value('--session')! } : {}),
+          ...(options.value('--request-id') ? { request_id: options.value('--request-id')! } : {}),
+          ...(options.value('--artifact') ? { artifact_id: options.value('--artifact')! } : {}) }), true);
+        return 0;
+      }
+      let request: AgentRequest;
+      try { request = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(resolve(options.required('--request'))))); }
+      catch { throw new ContainerFailure('InvalidArguments', 'Request must be a readable UTF-8 JSON file.'); }
+      if (command === 'agent check') {
+        const checked = await loom.check(request, { native_preflight: options.flags.has('--native-preflight') });
+        output(checked, true); return checked.blockers.length ? 1 : 0;
+      }
+      const result = await loom.invoke(request);
+      output(result, true); return result.execution.status === 'completed' ? 0 : 1;
+    }
     if (command === 'task create') {
       phase = 'application-loading';
       const { application, nativeHost, validateTaskInput } = await loadApplication(options.required('--app'));

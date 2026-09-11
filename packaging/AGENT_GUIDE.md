@@ -38,7 +38,9 @@ is trusted and each Task has one writer. No automatic crash recovery is provided
 - `loom task inspect <task> --summary --json`: small governance projection.
 - `loom task inspect <task> --json`: unchanged full evidence contract.
 
-JSON errors remain on stderr with exit code 1; successful results are on stdout.
+Legacy JSON errors remain on stderr with exit code 1; successful results are on stdout.
+Agent Check blockers and Invoke receipts are on stdout, with exit code 1 for a blocked
+check or an execution status other than completed. Envelope errors use stderr.
 Errors add `diagnostic` with a version, execution phase and suggested checks. Do not
 parse prose as an error code. Native output may require application-owned routing;
 trusted imported modules can have side effects even during definition loading.
@@ -70,7 +72,7 @@ The helper uses `<Task>/.agent-loom/pi` for its native runtime directory.
 
 Each registration is keyed by the Application's `native.binding_key` and contains
 an explicit absolute `entry`, optional absolute `prompt_paths`, and optional
-`create({ store })`. The factory returns `{ initialize, run, afterRun }` hooks;
+`create({ store, plan })`. The factory returns `{ initialize, run, afterRun }` hooks;
 a primary domain adapter must implement initialize and run. Hook factories share
 the registered entry used by preflight; they cannot replace it at execution time.
 
@@ -164,3 +166,143 @@ executable Host file. Inspect before retrying after changes or partial execution
 Keep developer instructions and governance inspection outside the main domain model
 context. Expose only explicit, domain-relevant inputs. Never publish real inputs,
 credentials, machine paths or Task evidence in a public application repository.
+
+## Agent services in alpha.3
+
+`agent-loom/agent` exports `connectLoom`, `discoverEntries`, `describeEntry`, and
+`createRequest`. The facade reuses the existing resolver, execution Kernel and
+canonical inspection. It does not decide which entry to call next.
+
+An optional `profile.entry` describes one existing Profile:
+
+```js
+entry: {
+  id: 'measurement.consume',
+  purpose: 'Derive a result from an accepted measurement source',
+  implementation: 'synthetic',
+  request_mapping: 'v1',
+  effect_declarations: ['task-files-write'],
+}
+```
+
+Add `input_name: 'source'` to its Artifact requirement. The default entry ID is the
+Profile ID; undeclared implementation/effects remain unknown. Declared outputs are
+those of the primary Plugin, and do not promise every Profile produces every type.
+`describe` returns an envelope JSON Schema, participant facts, optional examples,
+effects and retry limitations. The application still owns the data parser and
+semantic validation. Effect declarations are not enforced sandbox boundaries.
+
+```js
+import { connectLoom, createRequest } from 'agent-loom/agent';
+import { createSessionHost } from './host.mjs';
+
+const loom = await connectLoom({
+  taskRoot: './sample-task',
+  taskId: 'sample-task',
+  host: { actor: { id: 'application-executor' }, createHost: createSessionHost },
+});
+const entries = loom.discover({ input_type: 'measurement.samples' });
+const contract = loom.describe('measurement.consume');
+const request = {
+  ...createRequest('sample-task', contract.entry_id),
+  inputs: { source: { artifact_id: 'selected-artifact' } },
+};
+const checks = await loom.check(request);
+if (checks.blockers.length === 0) console.log(await loom.invoke(request));
+else console.log(checks);
+```
+
+The caller chooses the Artifact identity from Task facts and decides whether to
+invoke. This conditional is caller code, not a Loom planner. SDK `connectLoom`
+receives its trusted Host binding explicitly; CLI commands reuse the Task's saved
+Host binding. Request fields cannot override identity, composition, model settings,
+required aspects or unsupported hard limits. Unknown request fields are rejected.
+
+Supported CLI operations share the SDK implementation:
+
+```sh
+loom agent discover --app ./application.mjs --input-type measurement.samples --json
+loom agent describe measurement.consume --task sample-task --root ./sample-task --json
+loom agent check --task sample-task --root ./sample-task --request ./request.json --json
+loom agent invoke --task sample-task --root ./sample-task --request ./request.json --json
+loom agent inspect --task sample-task --root ./sample-task --entry measurement.consume --json
+```
+
+Discover supports exact ID, name substring, tag, input type and output type filters.
+Inspect can filter entry, Session, request or Artifact identity. Default views omit
+request contents, raw logs, transcripts and Artifact bodies. Old full inspection
+remains available and includes the locally persisted Session request copy.
+
+Check reports declaration, candidate IDs, selected references, Host delivery and
+native preflight separately. Host delivery is only a declaration, not a verified
+file, dependency fingerprint or working credential. Static checks do not import
+the Host or invoke factories. Loading an executable Application module may have
+side effects; for data-only discovery pass a previously validated data snapshot to
+`discoverEntries` or `describeEntry`.
+
+SDK bindings may supply `checkBindings(plan)` and `nativePreflight(plan)` with
+explicit coverage. `check(request, { native_preflight: true })` or CLI
+`--native-preflight` opts into trusted native loading; CLI preflight covers the
+Host's Application resources. It does not evaluate credentials, models, input
+bytes, initialization or business acceptance. Check reserves nothing. Invoke
+resolves again and the initializer must verify the actual bytes.
+
+The Profile, primary Pi registration and Host must explicitly support request
+mapping. Register `request_mapping: 'v1'` on the primary registration and implement
+its parser in the adapter. The initializer receives `context.request` and
+`context.plan.named_artifacts`; the factory receives a detached `plan`. Instructions
+and data are passed only to declared recipients. Aspects receive no request unless
+their registration explicitly opts in. Adapters decide which necessary domain
+values to send to the model; Loom never automatically prompts with the request,
+Task, governance store or Artifact body. Unsupported values must be rejected by
+the application parser, not silently ignored. Existing adapters still work through
+`session start` without invocation requests.
+
+`definePiApplicationModule` accepts `id`, `version`, `profiles`, the existing Pi
+Host options and `plugins: [{ descriptor, adapter }]`. It returns `application`,
+`createSessionHost` and `validateNativeApplication`. Descriptors and registrations
+are paired once; declaration validation, entry descriptions and Host composition
+use that definition. Export its application and Host functions from trusted local
+modules. Opening or validating a Host creates no adapter factories. Launch creates
+only participants selected by that Profile, with a separate governance writer per
+Session. No dependency causes a producer to run automatically.
+
+## Safe receipts and diagnostics
+
+A version 1 receipt separates execution, output references, aspect failures and
+`business_acceptance: { status: 'not-evaluated' }`. Adapter READY labels are not an
+independent business evaluation. Applications must perform their own acceptance;
+this release does not persist an additional business-acceptance authority.
+
+Missing prerequisites produce `not-started` with no Session. An initialization
+rejection retains its actual failed Session and records no consumption. A running
+or interrupted Session cannot confirm whether domain work started; inspect retains
+that uncertainty. Governance read/write failure produces `unknown` with known IDs,
+never a fabricated terminal outcome. A receipt is a projection, not another store.
+Inspecting a Task does not recover a conversation or establish safe retry.
+
+`request_id` correlates attempts; repeating it creates another Session. No
+idempotency, exactly-once, cancellation service or automatic recovery is provided.
+
+`readArtifactFile` produces safe reasons such as `DIGEST_MISMATCH` and
+`CONTRACT_MISMATCH`. Domain adapters can register reviewed static codes:
+
+```js
+import { registerSafeDiagnostics } from 'agent-loom';
+const reject = registerSafeDiagnostics('domain', ['SOURCE_POLICY_REJECTED']);
+// After applying the application's domain policy:
+throw reject('SOURCE_POLICY_REJECTED');
+```
+
+Registered errors survive Adapter, Pi Host and Kernel boundaries. Ordinary error
+objects, even ones containing a lookalike `diagnostic`, are not trusted. Only
+versioned allowlisted fields enter the receipt; raw message, stack and paths stay
+hidden. Kernel lifecycle observations set `domain_execution_started`; false means
+the domain run was not entered and does not rule out initialization side effects.
+The execution phase is not a claim about individual tools or external vendors.
+
+The local single-writer filesystem and cooperative same-process adapters remain
+trust assumptions. This release does not provide a malicious-code sandbox.
+Synthetic tests and the offline examples demonstrate these interfaces, not real
+Plugin compatibility or improved Agent task performance. Independent cold-start
+Agent comparisons remain a separate acceptance exercise.

@@ -29,3 +29,15 @@ The SDK bridge tests are synthetic. The optional `test/composite` experiment run
 real native plugins with deterministic model responses and measures a specific
 composition. It does not establish automatic checkpoint/compaction compatibility,
 filesystem security isolation, normal interactive usage or complete v0.1 acceptance.
+
+
+In alpha.3, `createPiHostModule` delays configure and adapter factories until a
+selected Profile launches. `createPiApplicationHost` also reads only selected
+adapter bindings and creates a Session-scoped governance writer. The new
+`definePiApplicationModule` pairs each descriptor with its registration.
+
+Primary adapters opting into `request_mapping: 'v1'` receive `context.request` and
+`context.plan.named_artifacts`. Aspect factories and hooks receive request data
+only when their registration explicitly opts in. Mapping is cooperative adapter
+behavior, not a same-process sandbox. Safe registered diagnostics are preserved
+through the native boundary; ordinary native error text remains hidden.

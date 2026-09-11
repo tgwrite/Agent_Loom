@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { ArtifactRecord, ArtifactRef, ArtifactRequirement, ArtifactConsumptionRecord } from '../artifact/index.ts';
 import { readNativeProvenance, toArtifactRef } from '../artifact/index.ts';
 import { resolveProfile } from '../application/index.ts';
+import { invocationRequirements } from '../invocation.ts';
 import type { CoreEventType, EventEnvelope } from '../event/index.ts';
 import { ContainerFailure } from '../failure/index.ts';
 import { createObserverFailure } from '../failure/observer.ts';
@@ -110,7 +111,7 @@ export class LocalTaskStore {
       && JSON.stringify(session.aspect_plugin_ids) === JSON.stringify(profile.aspects),
     'Session composition does not match its Task Application snapshot.');
     // Dependency resolution is a precondition, never proof of successful consumption.
-    for (const requirement of profile.requirements) await this.resolveArtifact(requirement);
+    for (const requirement of invocationRequirements(profile, this.#task.id, session.request)) await this.resolveArtifact(requirement);
     await io(async () => {
       const directory = join(this.#root, 'sessions', session.id);
       await mkdir(directory);

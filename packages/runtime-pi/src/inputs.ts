@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { ContainerFailure, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
+import { ContainerFailure, registerSafeDiagnostics, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
 import type { ArtifactRef, ArtifactRequirement } from '../../container-core/src/index.ts';
 import type { PiApplicationContext } from './application-host.ts';
+
+const inputFailure = registerSafeDiagnostics('artifact-input', ['SELECTED_REFERENCE_MISMATCH', 'CONTRACT_MISMATCH', 'FILE_REFERENCE_REQUIRED', 'FILE_LOCATION_REJECTED', 'DIGEST_MISMATCH']);
 
 /** Read exactly the selected reference and bytes. Domain verification remains mandatory.
  * This helper never resolves an alternative, publishes, or records consumption. */
@@ -12,23 +14,27 @@ export async function readArtifactFile<T>(context: PiApplicationContext, artifac
   requirement: ArtifactRequirement & { producer_plugin_id?: string },
   verify: (bytes: Uint8Array, artifact: ArtifactRef) => T | Promise<T>): Promise<T> {
   const ref = structuredClone(artifact);
-  const reject = (check: string): never => { throw new ContainerFailure('InvalidRecord',
-    'Artifact input was rejected.', { phase: 'artifact-input', check, artifact_id: ref.id }); };
+  const reject = (check: string): never => {
+    const names = Object.entries(context.plan.named_artifacts ?? {}).filter(([, selected]) => selected.id === ref.id).map(([name]) => name);
+    const name = requirement.input_name ?? (names.length === 1 ? names[0] : undefined);
+    throw inputFailure(check, { artifact_id: ref.id, ...(name ? { input_name: name } : {}) });
+  };
   // Identity comparison uses the complete reference supplied in this Session plan.
   if (ref.task_id !== context.task_id || context.plan.task_id !== context.task_id
-    || !context.plan.artifacts.some(selected => isDeepStrictEqual(selected, ref))) reject('selected-reference');
+    || !context.plan.artifacts.some(selected => isDeepStrictEqual(selected, ref))
+    || (requirement.input_name !== undefined && !isDeepStrictEqual(context.plan.named_artifacts?.[requirement.input_name], ref))) reject('SELECTED_REFERENCE_MISMATCH');
   if (ref.type !== requirement.type || ref.version !== requirement.version
     || ref.verification.status !== requirement.verification_status
     || (requirement.artifact_id !== undefined && ref.id !== requirement.artifact_id)
-    || (requirement.producer_plugin_id !== undefined && ref.producer.plugin_id !== requirement.producer_plugin_id)) reject('contract');
-  if (ref.payload_ref.kind !== 'file') return reject('file-reference');
+    || (requirement.producer_plugin_id !== undefined && ref.producer.plugin_id !== requirement.producer_plugin_id)) reject('CONTRACT_MISMATCH');
+  if (ref.payload_ref.kind !== 'file') return reject('FILE_REFERENCE_REQUIRED');
   let bytes: Uint8Array;
   try {
     const path = await realpath(resolveTaskPath(context.task_root, ref.payload_ref.path));
     taskRelativePath(relative(await realpath(context.task_root), path).replaceAll('\\', '/'));
     bytes = await readFile(path);
-  } catch { return reject('file-location'); }
-  if (createHash('sha256').update(bytes).digest('hex') !== ref.sha256) reject('digest');
+  } catch { return reject('FILE_LOCATION_REJECTED'); }
+  if (createHash('sha256').update(bytes).digest('hex') !== ref.sha256) reject('DIGEST_MISMATCH');
   // Rejection propagates to the initializer; Core records no successful consumption.
   return verify(bytes, ref);
 }

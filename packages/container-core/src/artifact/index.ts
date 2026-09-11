@@ -8,6 +8,7 @@ export interface ArtifactContract {
 }
 
 export interface ArtifactRequirement extends ArtifactContract {
+  input_name?: string;
   verification_status: string;
   artifact_id?: string;
 }

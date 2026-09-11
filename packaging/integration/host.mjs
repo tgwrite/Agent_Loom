@@ -11,15 +11,17 @@ export const { createSessionHost, validateNativeApplication } = createPiHostModu
   sdk, sdkVersion: 'synthetic', preflightDirectory: import.meta.dirname,
   configure: () => ({ settings: {}, modelRuntime: undefined }),
   adapters: {
-    domain: { entry: import.meta.filename,
+    domain: { entry: import.meta.filename, request_mapping: 'v1',
       async create({ store }) {
         const domain = domains[store.task.application_id];
         let accepted;
         return {
           async initialize(context, artifacts) {
+            assert.equal(context.request?.instruction, undefined, 'This synthetic entry does not accept instructions');
+            if (context.plan.profile_id !== 'produce') assert.equal(context.request?.data, undefined, 'Consumer accepts only Artifact inputs');
             if (context.plan.profile_id === 'produce') {
               assert.equal(artifacts.length, 0);
-              accepted = await readTaskInput(store, domain.parse);
+              accepted = context.request?.data === undefined ? await readTaskInput(store, domain.parse) : domain.parse(context.request.data);
             } else {
               assert.equal(artifacts.length, 1);
               accepted = await readArtifactFile(context, artifacts[0],

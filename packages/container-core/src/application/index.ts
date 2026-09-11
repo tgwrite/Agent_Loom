@@ -116,6 +116,23 @@ export function validateApplication(value: unknown): asserts value is Applicatio
   for (const profile of value.profiles) {
     object(profile);
     id(profile.id);
+    if (profile.entry !== undefined) {
+      object(profile.entry);
+      definition(typeof profile.entry.id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(profile.entry.id));
+      nonempty(profile.entry.purpose);
+      definition(profile.entry.implementation === 'native' || profile.entry.implementation === 'synthetic');
+      definition(profile.entry.request_mapping === undefined || profile.entry.request_mapping === 'v1');
+      definition(Array.isArray(profile.entry.effect_declarations));
+      profile.entry.effect_declarations.forEach(nonempty);
+      if (profile.entry.name !== undefined) nonempty(profile.entry.name);
+      if (profile.entry.tags !== undefined) { definition(Array.isArray(profile.entry.tags)); profile.entry.tags.forEach(nonempty); }
+      if (profile.entry.examples !== undefined) {
+        definition(Array.isArray(profile.entry.examples));
+        for (const example of profile.entry.examples) {
+          object(example); nonempty(example.instruction); nonempty(example.explanation); definition(typeof example.valid === 'boolean');
+        }
+      }
+    }
     if (profile.primary !== undefined) id(profile.primary);
     definition(Array.isArray(profile.aspects) && Array.isArray(profile.requirements));
     profile.aspects.forEach(id);
@@ -128,9 +145,16 @@ export function validateApplication(value: unknown): asserts value is Applicatio
       contract(requirement);
       nonempty(requirement.verification_status);
       if (requirement.artifact_id !== undefined) id(requirement.artifact_id);
+      if (requirement.input_name !== undefined) id(requirement.input_name);
     }
   }
   const application = value as unknown as ApplicationDefinition;
+  const entries = application.profiles.map(profile => profile.entry?.id ?? profile.id);
+  definition(new Set(entries).size === entries.length);
+  for (const profile of application.profiles) {
+    const names = profile.requirements.map(r => r.input_name).filter(name => name !== undefined);
+    definition(new Set(names).size === names.length);
+  }
   const produced = new Set(application.plugins.flatMap((plugin) =>
     (plugin.produces ?? []).map((item) => JSON.stringify([item.type, item.version]))));
   for (const profile of application.profiles) selectProfile(application, profile.id);
