@@ -18,3 +18,15 @@ test('public relative references and neutral project email pass', () => {
   assert.deepEqual(inspectText('fixtures/synthetic.json contributors@example.invalid'), []);
   assert.deepEqual(inspectPath('packages/container-core/src/index.ts'), []);
 });
+
+test('only the reviewed public repository URLs are exempted from the URL scan', () => {
+  const repository = 'https://github.com/tgwrite/Agent_Loom';
+  const protocol = ['https:', '', ''].join('/');
+  assert.deepEqual(inspectText(repository), []);
+  assert.deepEqual(inspectText(repository + '.git'), []);
+  for (const value of [repository + '-unreviewed', repository + '/unreviewed', repository + '?value=unreviewed',
+    repository.replace('/tgwrite/', '/synthetic-owner/'), repository.replace('https:', 'http:'),
+    repository.replace('github.com', 'github.com.invalid'), repository.replace(protocol, protocol + 'synthetic@')]) {
+    assert(inspectText(value).includes('unreviewed external URL'));
+  }
+});

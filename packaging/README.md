@@ -1,6 +1,12 @@
-# Agent Loom — local alpha package
+# Agent Loom — Plugin tools and artifact handoffs for AI agents
 
-**开发中：本包是本地 alpha 候选版本，完整 v0.1 尚未验收。**
+**TypeScript CLI and SDK for discovering plugin capabilities, reusing artifacts
+across sessions, and inspecting provenance and failures.**
+
+**开发预览 / Alpha:** This is a local installable candidate; complete v0.1 and
+independent Agent acceptance remain pending. No npm registry release is available.
+
+Canonical source: https://github.com/tgwrite/Agent_Loom
 
 This precompiled package provides the `loom` CLI, Core SDK and Pi Runtime bridge.
 It requires Node.js >=24.12.0 and npm. Source checkout, TypeScript compilation and
@@ -18,6 +24,19 @@ acceptance are separate. This candidate must pass local real-task acceptance
 before any public release.
 
 License: Apache-2.0. See LICENSE and NOTICE.
+
+| Agent operation | CLI | SDK |
+| --- | --- | --- |
+| Discover capabilities | `loom agent discover` | `loom.discover()` |
+| Read an entry contract | `loom agent describe` | `loom.describe()` |
+| Check required inputs | `loom agent check` | `loom.check()` |
+| Invoke a selected entry | `loom agent invoke` | `loom.invoke()` |
+| Inspect outcomes and lineage | `loom agent inspect` | `loom.inspect()` |
+
+The Agent chooses the action. Loom checks dependencies, runs the selected Session,
+and records which artifacts were produced and successfully consumed. Runtime
+integration targets Pi; Core is independent of Pi. Completed execution does not
+certify business acceptance, and unknown outcomes do not imply safe retry.
 
 For application developers and coding agents, start with [AGENT_GUIDE.md](AGENT_GUIDE.md).
 It maps business changes to files, describes the reusable Host and input helpers,

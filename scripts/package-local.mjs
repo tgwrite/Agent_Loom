@@ -43,7 +43,7 @@ for (const [source, destination] of [
 ]) await include(join(repo, source), destination);
 for (const name of ['domains.mjs', 'measurement.mjs', 'catalog.mjs', 'measurement.json', 'catalog.json', 'host.mjs', 'synthetic-sdk.mjs'])
   await include(join(repo, 'packaging/integration', name), `examples/integration/${name}`);
-const manifest = Object.fromEntries(['name', 'version', 'description', 'license', 'type', 'engines', 'bin', 'exports'].map(key => [key, metadata[key]]));
+const manifest = Object.fromEntries(['name', 'version', 'description', 'keywords', 'homepage', 'repository', 'license', 'type', 'engines', 'bin', 'exports'].map(key => [key, metadata[key]]));
 manifest.private = true;
 manifest.files = ['bin/', 'dist/', 'examples/', 'README.md', 'INSTALL.md', 'AGENT_GUIDE.md', 'LICENSE', 'NOTICE'];
 const manifestPath = join(scratch, 'manifest.json');

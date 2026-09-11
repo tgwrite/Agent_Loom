@@ -2,7 +2,10 @@
   "name": "agent-loom",
   "version": "0.1.0-alpha.4",
   "private": true,
-  "description": "A minimal application and task governance container for existing Agent Plugins.",
+  "description": "TypeScript CLI and SDK for AI agents to discover and invoke plugins, reuse artifacts across sessions, and inspect provenance. Pi runtime support. Alpha.",
+  "keywords": ["ai-agents", "agent-tools", "agent-sdk", "agent-plugins", "artifact-provenance", "artifact-lineage", "session-management", "pi-agent", "typescript", "cli"],
+  "homepage": "https://github.com/tgwrite/Agent_Loom",
+  "repository": { "type": "git", "url": "https://github.com/tgwrite/Agent_Loom.git" },
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
@@ -48,6 +51,7 @@
     "privacy:history": "node scripts/privacy-check.mjs --history",
     "check": "npm run typecheck && npm test && npm run privacy:check",
     "demo": "node examples/c2-analysis-application/demo.ts",
+    "demo:agent": "node examples/agent-services-demo.mjs",
     "package:local": "node scripts/package-local.mjs",
     "package:verify": "node scripts/verify-package.mjs"
   },

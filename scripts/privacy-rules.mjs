@@ -6,6 +6,12 @@ const approvedHosts = new Set([
   'localhost',
 ]);
 
+// Verified public project identity; other GitHub repositories remain unreviewed.
+const approvedProjectUrls = new Set([
+  'https://github.com/tgwrite/Agent_Loom',
+  'https://github.com/tgwrite/Agent_Loom.git',
+]);
+
 export const projectIdentity = 'Agent Loom contributors <contributors@example.invalid>';
 
 export function inspectText(content, privateTerms = []) {
@@ -27,7 +33,7 @@ export function inspectText(content, privateTerms = []) {
   for (const match of content.matchAll(/https?:\/\/[^\s<>"'`\\)]+/gi)) {
     try {
       const url = new URL(match[0]);
-      if (!approvedHosts.has(url.hostname) || url.username || url.password
+      if ((!approvedHosts.has(url.hostname) && !approvedProjectUrls.has(url.href)) || url.username || url.password
         || (url.protocol !== 'https:' && !['www.apache.org', 'localhost'].includes(url.hostname))) {
         findings.add('unreviewed external URL');
       }

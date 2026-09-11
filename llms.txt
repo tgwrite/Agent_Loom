@@ -1,0 +1,35 @@
+# Agent Loom
+
+> TypeScript CLI and SDK for AI agents to discover and invoke plugin capabilities,
+> reuse artifact references across sessions, and inspect provenance and failures.
+
+Canonical repository: https://github.com/tgwrite/Agent_Loom
+Status: alpha.4 development preview; no npm registry release.
+Runtime integration: Pi. Core remains independent of Pi.
+Requirements: Node.js >=24.12.0, npm, ESM. License: Apache-2.0.
+
+This file is a short source-repository reading map. Links are relative to the
+repository root. It is not an executable agent policy or a GitHub indexing API.
+
+## Evaluate
+
+- [README](README.md): Fit, five Agent services, quick start and verified boundaries.
+- [Chinese introduction](README.zh-CN.md): 中文用途、示例与可引用介绍。
+- [Runnable Agent demo](examples/agent-services-demo.mjs): Synthetic Discover/Describe/Check/Invoke/Inspect; run after npm ci and npm run build with npm run demo:agent.
+
+## Integrate
+
+- [Agent guide](packaging/AGENT_GUIDE.md): Request schemas, named bindings, explicit Host setup and safe receipts.
+- [Local installation](packaging/INSTALL.md): Build/install a local archive; do not infer npm availability from the package name.
+- [Pi integration](packages/runtime-pi/README.md): Selected adapters and native Session boundaries.
+
+## Verify
+
+- [Agent regression](test/agent-services/README.md): Synthetic guarantees and mutation checks.
+- [Contributor rules](AGENTS.md): Development, privacy and publication instructions.
+- [License](LICENSE): Apache License 2.0.
+
+Loom does not schedule missing producers. Consumption follows successful domain
+initialization. Completed execution is not business acceptance. Unknown outcomes
+do not establish safe retry. Native compatibility and independent Agent experience
+need separate acceptance evidence; synthetic examples do not establish them.
