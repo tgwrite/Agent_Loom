@@ -20,7 +20,8 @@ repository root. It is not an executable agent policy or a GitHub indexing API.
 ## Integrate
 
 - [Agent guide](packaging/AGENT_GUIDE.md): Request schemas, named bindings, explicit Host setup and safe receipts.
-- [Local installation](packaging/INSTALL.md): Build/install a local archive; do not infer npm availability from the package name.
+- [Download alpha](https://github.com/tgwrite/Agent_Loom/releases): Precompiled CLI/SDK archive, SHA256SUMS and installation instructions.
+- [Installation](packaging/INSTALL.md): Install a downloaded or locally built archive; no npm registry release.
 - [Pi integration](packages/runtime-pi/README.md): Selected adapters and native Session boundaries.
 
 ## Verify

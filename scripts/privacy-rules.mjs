@@ -10,6 +10,7 @@ const approvedHosts = new Set([
 const approvedProjectUrls = new Set([
   'https://github.com/tgwrite/Agent_Loom',
   'https://github.com/tgwrite/Agent_Loom.git',
+  'https://github.com/tgwrite/Agent_Loom/releases',
 ]);
 
 export const projectIdentity = 'Agent Loom contributors <contributors@example.invalid>';

@@ -15,6 +15,19 @@ The agent chooses the next action; Loom manages the selected execution and its f
 implemented. Complete v0.1 acceptance and independent Agent experience validation
 remain pending. No package is currently published to npm.
 
+**Install alpha.6:** download `agent-loom-0.1.0-alpha.6.tgz`, `SHA256SUMS` and
+`INSTALL.md` from [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
+With Node.js >=24.12.0 and npm, run from the download directory:
+
+```sh
+npm install --global ./agent-loom-0.1.0-alpha.6.tgz --offline --ignore-scripts --no-audit --no-fund
+loom --version
+```
+
+The archive includes the CLI, SDK and Pi Runtime bridge. Applications supply Pi,
+business plugins and model configuration separately. For a project dependency,
+see the [installation guide](packaging/INSTALL.md).
+
 Alpha.5 adds optional business data schemas and examples, staged native diagnostics,
 request attempt summaries, cooperative Task writer locks, participant observations
 and app-declared acceptance references. History inspection avoids repeated Session

@@ -1,9 +1,15 @@
-# Install the local candidate
+# Install the alpha preview
 
-Use Node.js >=24.12.0 with npm. Obtain the local candidate `.tgz` and SHA256SUMS;
+Use Node.js >=24.12.0 with npm. Download the `.tgz` and SHA256SUMS from
+[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases), or build a local
+candidate from the source checkout with `npm run package:local`;
 this version is not published to an npm registry. Keep the archive for reinstalling
 projects that refer to it as a local dependency. The archive requires no install
 scripts, compiler, or third-party runtime downloads.
+
+Before installing, compare the archive's SHA-256 with the entry in SHA256SUMS.
+In PowerShell, use `Get-FileHash ./agent-loom-0.1.0-alpha.6.tgz -Algorithm SHA256`;
+on Linux, use `sha256sum -c SHA256SUMS`.
 
 ## Command-line tool
 

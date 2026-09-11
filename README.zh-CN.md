@@ -8,6 +8,18 @@ Agent 决定下一步做什么；Loom 管理被明确选择的插件组合、依
 当前为 **alpha.6 开发预览**：Core、CLI/SDK 和 Pi Application Host 已实现，
 完整 v0.1 与独立 Agent 体验验收仍待完成。尚未发布 npm 包。
 
+**安装 alpha.6：** 从 [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases)
+下载 `agent-loom-0.1.0-alpha.6.tgz`、`SHA256SUMS` 和 `INSTALL.md`。
+准备 Node.js >=24.12.0 与 npm，在下载目录执行：
+
+```sh
+npm install --global ./agent-loom-0.1.0-alpha.6.tgz --offline --ignore-scripts --no-audit --no-fund
+loom --version
+```
+
+安装包包含 CLI、SDK 和 Pi Runtime 桥接层；Pi、业务插件和模型配置由应用另行提供。
+项目内安装方式见[安装说明](packaging/INSTALL.md)。
+
 alpha.5 补齐了可选的业务参数 Schema 与示例、分层接入诊断、按 request ID
 汇总多次尝试、显式 Task 写锁、插件运行观察和验收证据引用，并减少历史查询的重复读取。
 参数校验不代表业务验收，重复 request ID 不提供幂等保证。

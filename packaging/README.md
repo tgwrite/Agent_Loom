@@ -3,10 +3,13 @@
 **TypeScript CLI and SDK for discovering plugin capabilities, reusing artifacts
 across sessions, and inspecting provenance and failures.**
 
-**开发预览 / Alpha:** This is a local installable candidate; complete v0.1 and
+**开发预览 / Alpha:** This is an installable development preview; complete v0.1 and
 independent Agent acceptance remain pending. No npm registry release is available.
 
 Canonical source: https://github.com/tgwrite/Agent_Loom
+
+Download the archive, SHA256SUMS and installation instructions from
+[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
 
 This precompiled package provides the `loom` CLI, Core SDK and Pi Runtime bridge.
 It requires Node.js >=24.12.0 and npm. Source checkout, TypeScript compilation and
@@ -20,8 +23,9 @@ at Session startup, according to the selected Application/Profile.
 
 Task data belongs in your own workspace. No workflow scheduling, automatic retry
 or schema migration is provided. CLI/SDK installation checks and real Pi task
-acceptance are separate. This candidate must pass local real-task acceptance
-before any public release.
+acceptance are separate. This alpha pre-release is offered for installation and
+integration testing. Real-task and independent Agent acceptance remain pending;
+it is not a stable release.
 
 License: Apache-2.0. See LICENSE and NOTICE.
 
@@ -49,5 +53,5 @@ The alpha.6 `agent-loom/agent` export provides Discover, Describe, Check, Invoke
 Inspect over the existing governance Kernel. Run `loom --help` for commands and
 see `AGENT_GUIDE.md` for request mapping. Requests and receipts are versioned,
 named bindings are rechecked at execution, and Pi factories are selected per
-Profile. This local candidate does not establish native compatibility or
+Profile. This development preview does not establish native compatibility or
 independent Agent experience acceptance.
