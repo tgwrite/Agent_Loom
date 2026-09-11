@@ -500,3 +500,49 @@ writer is changing files. Use cooperative ownership when a decision requires a
 stable read. `npm run benchmark:inspection` in a source checkout measures synthetic
 100/500-Session histories; timings are local observations, not Plugin performance
 or model-quality evidence.
+
+## Contract corrections in alpha.6
+
+Exclusive Invoke now retains its durable writer lock when startup or outcome
+confirmation is uncertain, including before any Session has been registered.
+The lock is persisted before entering Host code. A Host factory, validation or
+launch failure without a confirmed Session reports `unknown`, with the allocated
+Session ID only when known. `domain_execution_started: false` still means the domain
+run was not entered; it does not rule out startup effects. Failure to persist lock
+ownership prevents Host entry. Confirmed completion/failure and rejection before
+Host entry permit normal lock cleanup. Unexpected callback exceptions after the
+retention guard is set keep the lock as well.
+
+Subsequent exclusive calls, including from another process, return
+`TASK_WRITER_BUSY` while the lock remains. The lock cannot distinguish a live writer
+from an uncertain prior attempt. It records a version, owner token, Task ID and,
+for Invoke, request/entry IDs; no instruction or business data is copied. This
+correlation is not a fabricated Session, an invocation outcome journal or a complete
+receipt. Inspect may still show no Session and `operation.status: 'not-recorded'`
+after startup failure. That does not override the retained writer lock.
+
+For custom SDK write boundaries, `withTaskWriter` now passes a lease to its callback:
+`lease.retainOnExit()` prevents automatic removal on return or throw;
+`lease.releaseOnExit()` permits removal at callback exit. Neither releases the lock
+immediately, and neither can be used after the callback exits. Callers remain
+responsible for deciding when an outcome is confirmed. Existing callbacks accepting
+no arguments retain their previous cleanup behavior. Exclusive Invoke applies this
+policy automatically. Legacy opaque lock files remain blocking; no automatic lock
+migration, expiry, PID-based recovery or operation retry is performed. Reconcile
+startup effects and any stored Session before manually removing a retained lock.
+
+Receipt schema version 1 gains **a new `observation.history` enum value** in alpha.6:
+
+| Value | Meaning |
+| --- | --- |
+| `not-checked` | This invocation did not attempt to inspect history, for example because lock acquisition failed. |
+| `readable` | The history read succeeded, even if a startup or governance write failed. |
+| `unreadable` | An attempted history read or validation failed. |
+
+This changes the allowed value set, not merely optional fields: SDK consumers with
+exhaustive branches and strict JSON validators must handle `not-checked` before
+upgrading. CLI receipts use the same contract and still exit nonzero for blocked or
+unknown execution. Inspect always attempts a read, so its top-level `history`
+continues to use `readable`/`unreadable`. A write failure must not be reclassified as
+a failed history read. Execution status, history observation and outcome
+confirmation remain separate facts.

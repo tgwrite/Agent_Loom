@@ -122,19 +122,34 @@ try {
     console.log(JSON.stringify(await loom.inspect()));`);
   const sdkFacts = JSON.parse(run(process.execPath, [join(project, 'agent-import.mjs'), join(root, 'agent-measurement-0')], unrelated));
   assert.equal(sdkFacts.history, 'readable'); assert.equal(sdkFacts.readiness.host_delivery, 'missing');
+  await writeFile(join(project, 'writer-recovery.mjs'), `
+    import assert from 'node:assert/strict';
+    import { connectLoom, createRequest } from 'agent-loom/agent';
+    const [taskRoot, taskId] = process.argv.slice(2); let entered = 0;
+    const host = { actor: { id: 'package-probe' }, async createHost() { entered++; throw new Error('Synthetic startup failure'); } };
+    const options = { taskRoot, taskId, host, writer_policy: 'exclusive' };
+    const first = await (await connectLoom(options)).invoke(createRequest(taskId, 'measurement.produce'));
+    assert.equal(first.execution.status, 'unknown'); assert.equal(first.observation.history, 'readable');
+    const second = await (await connectLoom(options)).invoke(createRequest(taskId, 'measurement.produce'));
+    assert.equal(second.diagnostic.reason_code, 'TASK_WRITER_BUSY'); assert.equal(second.observation.history, 'not-checked');
+    assert.equal(entered, 1);
+  `);
+  run(process.execPath, [join(project, 'writer-recovery.mjs'), join(root, 'agent-measurement-0'), 'agent-measurement-0'], unrelated);
   const ts = join(project, 'node_modules/typescript');
   // Copy only the pinned test compiler, never the checkout or its node_modules resolution tree.
   await cp(join(repo, 'node_modules/typescript'), ts, { recursive: true });
-  await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, createNativeFailure, registerSafeDiagnostics, type FailureRecord, type ArtifactRef } from 'agent-loom';
-import { connectLoom, createRequest, type AgentRequest, type DataSchema } from 'agent-loom/agent';
+  await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, createNativeFailure, registerSafeDiagnostics, withTaskWriter, type TaskWriterLease, type FailureRecord, type ArtifactRef } from 'agent-loom';
+import { connectLoom, createRequest, type AgentRequest, type AgentReceipt, type DataSchema } from 'agent-loom/agent';
 import { createPiApplicationHost, createPiHostModule, definePiApplicationModule, readArtifactFile, readTaskInput, type PiApplicationHostOptions } from 'agent-loom/runtime-pi';
 const open: (root: string) => Promise<LocalTaskStore> = LocalTaskStore.open;
 const host: (options: PiApplicationHostOptions) => ReturnType<typeof createPiApplicationHost> = createPiApplicationHost;
 const id = (ref: ArtifactRef): string => ref.id;
 const request: AgentRequest = createRequest('task', 'entry');
 const schema: DataSchema = { type: 'object', required: ['label'], properties: { label: { type: 'string' } } };
+const unchecked: AgentReceipt['observation']['history'] = 'not-checked';
+const hold = (lease: TaskWriterLease) => { lease.retainOnExit(); lease.releaseOnExit(); };
 const failure: FailureRecord = createNativeFailure(registerSafeDiagnostics('domain', ['REJECTED'])('REJECTED'));
-void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request, failure, schema];\n`);
+void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request, failure, schema, unchecked, hold, withTaskWriter];\n`);
   run(process.execPath, [join(ts, 'bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2023', 'consumer.ts']);
   const beforeUninstall = JSON.stringify(snapshot);
   npm(['uninstall', '--global', 'agent-loom', '--prefix', prefix, '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);

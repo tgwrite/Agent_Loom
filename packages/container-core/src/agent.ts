@@ -170,11 +170,13 @@ export async function connectLoom(options: AgentConnectionOptions) {
       const request = requestCopy(value);
       let sessionId: string | null = null;
       let started = false;
+      let hostEntered = false;
       let failure: unknown;
       try {
         const profile = profileFor(application, request.entry_id);
         const plan = await prepareSession(store, profile.id, undefined, request);
         if (!binding || hostDelivery !== 'declared') throw new ContainerFailure('NativeIntegrationNotReady', 'Host delivery is missing.');
+        hostEntered = true;
         const host = await binding.createHost({ store, plan: structuredClone(plan) });
         await executeSession(store, plan, host, binding.actor, observation => {
           sessionId = observation.session_id;
@@ -190,22 +192,21 @@ export async function connectLoom(options: AgentConnectionOptions) {
             result.call_diagnostic = diagnosticFor(failure, 'governance-storage', started);
           return result;
         }
-        if (failure instanceof ContainerFailure && failure.code === 'StorageFailure') throw failure;
       } catch (error) {
         return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
-          session_id: sessionId, execution: { status: 'unknown', domain_execution_started: started }, artifacts: [], aspect_failures: [],
+          session_id: sessionId, execution: { status: hostEntered ? 'unknown' : 'not-started', domain_execution_started: started }, artifacts: [], aspect_failures: [],
           participants: unobservedParticipants(profileFor(application, request.entry_id)),
-          observation: { history: 'unreadable', recorded_session_status: null, outcome_confirmed: false },
+          observation: { history: 'unreadable', recorded_session_status: null, outcome_confirmed: !hostEntered },
           requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
           business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(error, 'governance-storage', started),
           inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
-        session_id: sessionId, execution: { status: sessionId ? 'unknown' : 'not-started', domain_execution_started: false }, artifacts: [], aspect_failures: [],
+        session_id: sessionId, execution: { status: hostEntered ? 'unknown' : 'not-started', domain_execution_started: started }, artifacts: [], aspect_failures: [],
         participants: unobservedParticipants(profileFor(application, request.entry_id)),
-        observation: { history: 'readable', recorded_session_status: null, outcome_confirmed: sessionId === null },
+        observation: { history: 'readable', recorded_session_status: null, outcome_confirmed: !hostEntered },
         requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
-        business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(failure, 'native', false),
+        business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(failure, 'native', started),
         inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
     },
     async inspect(filter: { entry_id?: string; session_id?: string; request_id?: string; artifact_id?: string } = {}) {
@@ -242,27 +243,32 @@ export async function connectLoom(options: AgentConnectionOptions) {
     const request = requestCopy(value);
     if (!exclusiveWriter) return services.invoke(request);
     let receipt: AgentReceipt | undefined;
-    let historyRead = false;
+    let history: AgentReceipt['observation']['history'] = 'not-checked';
+    let invocationAttempted = false;
     try {
-      return await withTaskWriter(store, async () => {
+      return await withTaskWriter(store, async lease => {
+        history = 'unreadable'; // A failure from this attempted read is distinct from not acquiring the lock.
         const view = taskInspectionView(await inspectTask(store));
-        historyRead = true;
+        history = 'readable';
         if (view.sessions.some(session => !projectSessionFacts(session).observation.outcome_confirmed))
           throw new ContainerFailure('TaskOutcomeUnconfirmed', 'Reconcile unconfirmed Session outcomes before starting another writer.');
         // Preparation, input resolution, initialization and receipt inspection all happen under ownership.
+        // Retain before entering Host code so an unexpected exception cannot erase uncertain startup work.
+        lease.retainOnExit();
+        invocationAttempted = true;
         receipt = await services.invoke(request);
+        if (receipt.observation.outcome_confirmed) lease.releaseOnExit();
         return receipt;
-      });
+      }, { request_id: request.request_id, entry_id: request.entry_id });
     } catch (error) {
       if (receipt) return { ...receipt, call_diagnostic: diagnosticFor(error, 'governance-storage') };
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
-        session_id: null, execution: { status: 'not-started', domain_execution_started: false },
-        observation: { history: historyRead ? 'readable' : 'unreadable',
-          recorded_session_status: null, outcome_confirmed: true },
+        session_id: null, execution: { status: invocationAttempted ? 'unknown' : 'not-started', domain_execution_started: invocationAttempted ? 'unknown' : false },
+        observation: { history, recorded_session_status: null, outcome_confirmed: !invocationAttempted },
         requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
         artifacts: [], aspect_failures: [], business_acceptance: { status: 'not-evaluated' },
         participants: unobservedParticipants(profileFor(application, request.entry_id)),
-        diagnostic: diagnosticFor(error, 'governance-storage', false),
+        diagnostic: diagnosticFor(error, 'governance-storage', invocationAttempted ? undefined : false),
         inspection_ref: { task_id: store.task.id, session_id: null }, retry_safety: 'not-established' };
     }
   } };

@@ -5,12 +5,15 @@
 Agent 决定下一步做什么；Loom 管理被明确选择的插件组合、依赖检查和执行事实。
 项目提供 TypeScript SDK 与 JSON CLI，v0.1 的运行时集成面向 Pi。
 
-当前为 **alpha.5 开发预览**：Core、CLI/SDK 和 Pi Application Host 已实现，
+当前为 **alpha.6 开发预览**：Core、CLI/SDK 和 Pi Application Host 已实现，
 完整 v0.1 与独立 Agent 体验验收仍待完成。尚未发布 npm 包。
 
 alpha.5 补齐了可选的业务参数 Schema 与示例、分层接入诊断、按 request ID
 汇总多次尝试、显式 Task 写锁、插件运行观察和验收证据引用，并减少历史查询的重复读取。
 参数校验不代表业务验收，重复 request ID 不提供幂等保证。
+
+alpha.6 修复登记 Session 前的未知启动结果未阻断后续调用的问题，并区分历史
+未检查、可读取与读取失败；严格校验回执的调用方需支持新增的 `not-checked` 状态。
 
 [English README](README.md) · [Agent 接入指南](packaging/AGENT_GUIDE.md) ·
 [可运行示例](examples/agent-services-demo.mjs) · [文档导航](llms.txt)

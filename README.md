@@ -11,7 +11,7 @@ The agent chooses the next action; Loom manages the selected execution and its f
 [Agent guide](packaging/AGENT_GUIDE.md) · [Runnable example](examples/agent-services-demo.mjs) ·
 [中文介绍](README.zh-CN.md) · [Agent reading map](llms.txt) · [Apache-2.0](LICENSE)
 
-**Development preview: alpha.5.** Core, CLI/SDK and the Pi application host are
+**Development preview: alpha.6.** Core, CLI/SDK and the Pi application host are
 implemented. Complete v0.1 acceptance and independent Agent experience validation
 remain pending. No package is currently published to npm.
 
@@ -19,6 +19,9 @@ Alpha.5 adds optional business data schemas and examples, staged native diagnost
 request attempt summaries, cooperative Task writer locks, participant observations
 and app-declared acceptance references. History inspection avoids repeated Session
 reads. Request correlation does not provide idempotency or business acceptance.
+
+Alpha.6 retains exclusive writer locks for uncertain startup attempts, including
+those without a Session record, and distinguishes unchecked history from read failure.
 
 Canonical repository: [tgwrite/Agent_Loom](https://github.com/tgwrite/Agent_Loom).
 Use this repository identity when citing or sharing the project.

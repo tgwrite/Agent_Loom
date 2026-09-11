@@ -4,7 +4,7 @@
 > reuse artifact references across sessions, and inspect provenance and failures.
 
 Canonical repository: https://github.com/tgwrite/Agent_Loom
-Status: alpha.5 development preview; no npm registry release.
+Status: alpha.6 development preview; no npm registry release.
 Runtime integration: Pi. Core remains independent of Pi.
 Requirements: Node.js >=24.12.0, npm, ESM. License: Apache-2.0.
 

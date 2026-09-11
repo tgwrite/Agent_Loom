@@ -14,7 +14,7 @@ export interface AgentReceipt {
   entry_id: string;
   session_id: string | null;
   execution: { status: 'not-started' | 'running' | 'completed' | 'failed' | 'unknown'; domain_execution_started: boolean | 'unknown' };
-  observation: { history: 'readable' | 'unreadable'; recorded_session_status: SessionRunRecord['status'] | null; outcome_confirmed: boolean };
+  observation: { history: 'not-checked' | 'readable' | 'unreadable'; recorded_session_status: SessionRunRecord['status'] | null; outcome_confirmed: boolean };
   requested_inputs: { input_name: string; artifact_id: string }[];
   resolved_inputs: { status: 'recorded' | 'unavailable'; bindings: ResolvedInput[] };
   consumed: { id: string; artifact_id: string; accepted_sha256: string; producer_session_id: string;

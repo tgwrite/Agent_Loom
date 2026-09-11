@@ -1,6 +1,6 @@
 {
   "name": "agent-loom",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "private": true,
   "description": "TypeScript CLI and SDK for AI agents to discover and invoke plugins, reuse artifacts across sessions, and inspect provenance. Pi runtime support. Alpha.",
   "keywords": ["ai-agents", "agent-tools", "agent-sdk", "agent-plugins", "artifact-provenance", "artifact-lineage", "session-management", "pi-agent", "typescript", "cli"],
