@@ -13,6 +13,7 @@ export interface SessionProfile {
 }
 
 export interface SessionRunRecord {
+  resolved_inputs?: { binding_version: 1; bindings: ResolvedInput[] };
   request?: AgentRequest;
   id: string;
   task_id: string;
@@ -28,4 +29,12 @@ export interface SessionRunRecord {
   started_at: string;
   finished_at?: string;
   failure?: FailureRecord;
+}
+
+/** Selection evidence captured before initialization; never proof of consumption. */
+export interface ResolvedInput {
+  requirement_index: number;
+  input_name?: string;
+  artifact_id: string;
+  sha256: string;
 }

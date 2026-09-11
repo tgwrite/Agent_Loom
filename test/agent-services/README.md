@@ -12,6 +12,11 @@ M10/M15 target the updated failure/settlement statements, and M13/M17 target the
 current semantic owners. Compilation failure is not credited as detection.
 
 Source fingerprints and raw results stay in ignored `.test-tmp/agent-services/`.
+`node test/agent-services/contracts-mutate.mjs` separately checks seven mutations
+of receipt state, binding capture, consumption projection, startup digest checks,
+preflight status, returned reasons and diagnostic trust. Each must compile and
+execute the contract tests before a failing assertion counts as detection.
+
 This synthetic campaign does not replace the native parity campaign, reproduce
 an earlier Agent baseline, or demonstrate better Agent decisions. Independent
 sensor/stock Agent blind trials require their own fair baseline and evidence.

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { invocationRequirements } from './invocation.ts';
 import type { AgentRequest } from './invocation.ts';
-import { diagnosticFor, safeNativeFailure } from './failure/diagnostic.ts';
+import { createNativeFailure, safeNativeFailure } from './failure/diagnostic.ts';
 import { resolveProfile } from './application/index.ts';
 import type { ArtifactRef, ArtifactConsumptionRecord } from './artifact/index.ts';
 import type { ActorRef, RuntimeRef } from './actor/index.ts';
@@ -91,6 +91,11 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
     { session_id: sessionId, task_root: store.taskRoot, actor: structuredClone(actor) }));
   const session: SessionRunRecord = { id: sessionId, task_id: prepared.task_id,
     ...(prepared.request ? { request: structuredClone(prepared.request) } : {}),
+    ...(prepared.request ? { resolved_inputs: { binding_version: 1 as const,
+      bindings: invocationRequirements(resolveProfile(store.task.application, prepared.profile_id).profile, prepared.task_id, prepared.request)
+        .map((requirement, index) => ({ requirement_index: index,
+          ...(requirement.input_name ? { input_name: requirement.input_name } : {}),
+          artifact_id: prepared.artifacts[index]!.id, sha256: prepared.artifacts[index]!.sha256 })) } } : {}),
     profile_id: prepared.profile_id, workspace: prepared.workspace,
     ...(prepared.primary_plugin_id ? { primary_plugin_id: prepared.primary_plugin_id } : {}),
     aspect_plugin_ids: prepared.aspect_plugin_ids, plugin_ids: prepared.plugin_ids,
@@ -119,8 +124,7 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
     closed = true;
     await nativeCall(() => handle.close());
     await store.settleSession(session.id, result.status, new Date().toISOString(), prepared.request && result.status === 'failed'
-      ? { code: 'NativeExecutionFailed', message: 'Runtime reported a failed Session.', source: 'native-adapter',
-        timestamp: new Date().toISOString(), diagnostic: diagnosticFor(undefined, 'native', domainStarted) }
+      ? createNativeFailure(result.failure, domainStarted)
       : result.failure);
     return await store.getSession(session.id);
   } catch (error) {
@@ -132,11 +136,7 @@ export async function executeSession(store: LocalTaskStore, plan: SessionPlan,
       }
     }
     if (recorded && (await store.getSession(session.id)).status === 'running') {
-      await store.settleSession(session.id, 'failed', new Date().toISOString(), {
-        code: 'NativeExecutionFailed', message: 'Native initialization or execution failed.',
-        source: 'native-adapter', timestamp: new Date().toISOString(),
-        diagnostic: diagnosticFor(error, 'native', domainStarted),
-      });
+      await store.settleSession(session.id, 'failed', new Date().toISOString(), createNativeFailure(error, domainStarted));
     }
     // Native error text may include private paths, credentials, or domain context.
     if (error instanceof ContainerFailure) throw error;

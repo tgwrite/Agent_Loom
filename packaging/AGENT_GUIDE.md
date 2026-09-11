@@ -276,9 +276,10 @@ this release does not persist an additional business-acceptance authority.
 
 Missing prerequisites produce `not-started` with no Session. An initialization
 rejection retains its actual failed Session and records no consumption. A running
-or interrupted Session cannot confirm whether domain work started; inspect retains
-that uncertainty. Governance read/write failure produces `unknown` with known IDs,
-never a fabricated terminal outcome. A receipt is a projection, not another store.
+record alone cannot confirm the outcome or executor liveness. Unreadable or
+inconsistent governance facts produce `unknown` with known IDs. If a transient
+write failure is followed by a consistent failed settlement, both Invoke and
+Inspect report `failed`. A receipt is a projection, not another store.
 Inspecting a Task does not recover a conversation or establish safe retry.
 
 `request_id` correlates attempts; repeating it creates another Session. No
@@ -306,3 +307,49 @@ trust assumptions. This release does not provide a malicious-code sandbox.
 Synthetic tests and the offline examples demonstrate these interfaces, not real
 Plugin compatibility or improved Agent task performance. Independent cold-start
 Agent comparisons remain a separate acceptance exercise.
+
+## Contract updates in alpha.4
+
+Request v1 and Task schema 2 remain supported. Receipt v1 adds facts; consumers
+should accept additive fields. `observation.recorded_session_status` reports the
+stored status, while `observation.outcome_confirmed` indicates a consistent terminal
+outcome (or an explicit pre-start rejection). A stored `running` becomes execution
+`unknown`, with `OUTCOME_UNCONFIRMED`, rather than a liveness claim. Matching terminal
+records and events are required for Agent receipts. `call_diagnostic`, when present,
+describes an immediate observation that could not be persisted; it does not
+override the shared outcome. Legacy queries retain their historical identity.
+
+`requested_inputs` contains explicit caller selections. `resolved_inputs` records
+the actual binding before initialization, including implicit selections; its
+status is `unavailable` for older records without this evidence. `consumed` contains
+only registered successful accepts, with accepted digest, producer Session,
+consumer Session/Plugin, time and known input names. One consumption can serve
+multiple input names. Old unknown names remain null. Empty consumption records do
+not prove that initialization never read data, and inspection does not revalidate
+current Artifact bytes. No input body, instruction or data is returned by default.
+
+Artifact summaries expose `consumers`. Session/entry/request filters restrict that
+list to matching Sessions; an Artifact-only query includes all its consumers.
+Artifact filtering also finds Sessions that selected the Artifact but rejected
+initialization; these Sessions are not added to its consumers.
+
+Check reports each stage as `not-checked`, `passed` or `failed`. Unchecked reasons
+distinguish an earlier blocker, an unsupported callback and an unrequested check.
+A failed native preflight may have loaded code. `agent inspect` returns exit 1
+with structured stdout when history is unreadable; missing Host delivery does not
+prevent successful historical inspection.
+
+A custom SessionHost can report the same reviewed failure by return or throw:
+
+```js
+import { createNativeFailure, registerSafeDiagnostics } from 'agent-loom';
+const reject = registerSafeDiagnostics('domain', ['SOURCE_POLICY_REJECTED']);
+// From NativeSessionHandle.run(), after applying domain policy:
+return { status: 'failed', failure: createNativeFailure(reject('SOURCE_POLICY_REJECTED')) };
+```
+
+The helper brands the record in process memory. Cloning, spreading or serializing
+it loses trust; lookalike diagnostics fall back to a generic safe reason. Kernel
+lifecycle evidence overrides caller-supplied phase claims. This protocol does not
+authenticate cross-process errors. All retry and business-acceptance limitations
+above still apply.

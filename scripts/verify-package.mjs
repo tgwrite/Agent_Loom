@@ -101,6 +101,11 @@ try {
     assert.equal(result.execution.status, 'completed'); assert.equal(result.business_acceptance.status, 'not-evaluated');
     const facts = JSON.parse(run(process.execPath, [cli, 'agent', 'inspect', ...args, '--session', result.session_id], unrelated));
     assert.equal(facts.sessions[0].request_id, request.request_id);
+    assert.equal(facts.sessions[0].observation.outcome_confirmed, true);
+    assert.equal(facts.sessions[0].resolved_inputs.bindings[0].artifact_id, produced.artifacts[0].id);
+    assert.equal(facts.sessions[0].consumed[0].artifact_id, produced.artifacts[0].id);
+    assert.equal(facts.sessions[0].consumed[0].producer_session_id, produced.session_id);
+    assert.deepEqual(facts.sessions[0], result);
   }
   await writeFile(join(project, 'agent-import.mjs'), `import { connectLoom } from 'agent-loom/agent';
     const loom = await connectLoom({ taskRoot: process.argv[2], taskId: 'agent-measurement-0' });
@@ -110,14 +115,15 @@ try {
   const ts = join(project, 'node_modules/typescript');
   // Copy only the pinned test compiler, never the checkout or its node_modules resolution tree.
   await cp(join(repo, 'node_modules/typescript'), ts, { recursive: true });
-  await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, type ArtifactRef } from 'agent-loom';
+  await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, createNativeFailure, registerSafeDiagnostics, type FailureRecord, type ArtifactRef } from 'agent-loom';
 import { connectLoom, createRequest, type AgentRequest } from 'agent-loom/agent';
 import { createPiApplicationHost, createPiHostModule, definePiApplicationModule, readArtifactFile, readTaskInput, type PiApplicationHostOptions } from 'agent-loom/runtime-pi';
 const open: (root: string) => Promise<LocalTaskStore> = LocalTaskStore.open;
 const host: (options: PiApplicationHostOptions) => ReturnType<typeof createPiApplicationHost> = createPiApplicationHost;
 const id = (ref: ArtifactRef): string => ref.id;
 const request: AgentRequest = createRequest('task', 'entry');
-void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request];\n`);
+const failure: FailureRecord = createNativeFailure(registerSafeDiagnostics('domain', ['REJECTED'])('REJECTED'));
+void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request, failure];\n`);
   run(process.execPath, [join(ts, 'bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2023', 'consumer.ts']);
   const beforeUninstall = JSON.stringify(snapshot);
   npm(['uninstall', '--global', 'agent-loom', '--prefix', prefix, '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);

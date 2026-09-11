@@ -172,7 +172,7 @@ test('request, binding and startup gates reject cross Task, unknown names, pins 
   const producer = (await f.store.listSessions())[0];
   await assert.rejects(f.store.startSession({ ...producer, id: 'forged-start', profile_id: 'consume', primary_plugin_id: 'consumer',
     plugin_ids: ['consumer', 'audit'], aspect_plugin_ids: ['audit'], status: 'running', request: wrong,
-    finished_at: undefined }), { code: 'PreconditionNotSatisfied' });
+    finished_at: undefined, resolved_inputs: undefined }), { code: 'PreconditionNotSatisfied' });
   assert.equal((await f.store.listConsumptions()).length, 0);
   const pinned = structuredClone(f.module.application); pinned.profiles[1].requirements[0].artifact_id = ids[1];
   const pinnedStore = await LocalTaskStore.create(join(f.root, 'pinned'), { ...f.store.task, application: pinned });
@@ -218,7 +218,8 @@ test('governance failures return unknown with known identity and remain inspecta
     const f = await setup(t); f.state.mode = mode;
     const result = await f.loom.invoke(f.request());
     assert.equal(result.execution.status, 'unknown'); assert(result.session_id);
-    assert.equal(result.diagnostic.reason_code, 'GOVERNANCE_STORAGE_FAILED');
+    assert.equal(result.diagnostic.reason_code, mode === 'storage' ? 'OUTCOME_UNCONFIRMED' : 'GOVERNANCE_STORAGE_FAILED');
+    if (mode === 'storage') assert.equal(result.call_diagnostic.reason_code, 'GOVERNANCE_STORAGE_FAILED');
     assert.equal(result.retry_safety, 'not-established');
     const actual = await f.store.getSession(result.session_id);
     assert.equal(actual.status, mode === 'storage' ? 'running' : 'completed');

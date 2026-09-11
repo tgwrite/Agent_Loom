@@ -1,6 +1,6 @@
 {
   "name": "agent-loom",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": true,
   "description": "A minimal application and task governance container for existing Agent Plugins.",
   "license": "Apache-2.0",

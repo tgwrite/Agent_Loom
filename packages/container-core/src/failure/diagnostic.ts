@@ -1,4 +1,5 @@
 import { ContainerFailure } from './index.ts';
+import type { FailureRecord } from './index.ts';
 
 export type DiagnosticBoundary = 'artifact-input' | 'domain' | 'native' | 'aspect' | 'governance-storage' | 'host' | 'request';
 export type SafeDiagnostic = {
@@ -12,6 +13,15 @@ export type SafeDiagnostic = {
 }
 const boundaries = new Set(['artifact-input', 'domain', 'native', 'aspect', 'governance-storage', 'host', 'request']);
 const trusted = new WeakMap<object, SafeDiagnostic>();
+
+/** Safe returned failure. Trust is process-local and does not survive serialization or cloning. */
+export function createNativeFailure(error: unknown, started?: boolean): FailureRecord {
+  const diagnostic = diagnosticFor(error, 'native', started);
+  const failure: FailureRecord = { code: 'NativeExecutionFailed', message: 'Native initialization or execution failed.',
+    source: 'native-adapter', timestamp: new Date().toISOString(), diagnostic };
+  trusted.set(failure, structuredClone(diagnostic));
+  return failure;
+}
 
 /** Reconstruct only the documented fields; never forward Plugin message/stack/details. */
 export function readSafeDiagnostic(value: unknown): SafeDiagnostic | undefined {

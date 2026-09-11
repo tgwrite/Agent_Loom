@@ -1,16 +1,35 @@
 import type { LocalTaskStore } from './storage/index.ts';
 import { readNativeProvenance } from './artifact/index.ts';
 import { readObserverFailure } from './failure/observer.ts';
+import { invocationRequirements } from './invocation.ts';
+import { requireRecord } from './record-validation.ts';
 
 /** The existing JSON snapshot contract, including original historical records. */
 export async function inspectTask(store: LocalTaskStore) {
+  const task = store.task;
+  const profiles = new Map(task.application.profiles.map(profile => [profile.id, profile]));
   const artifacts = await store.listArtifacts();
   const consumptions = await store.listConsumptions();
   const sessions = await store.listSessions();
   const byId = new Map(artifacts.map(artifact => [artifact.id, artifact]));
   return {
-    task: store.task,
+    task,
     sessions: await Promise.all(sessions.map(async session => {
+      if (session.resolved_inputs) {
+        const profile = profiles.get(session.profile_id);
+        requireRecord(profile !== undefined, 'Input binding Profile is unavailable.');
+        const requirements = invocationRequirements(profile!, session.task_id, session.request);
+        requireRecord(session.resolved_inputs.bindings.length === requirements.length, 'Input binding count does not match.');
+        for (const [index, binding] of session.resolved_inputs.bindings.entries()) {
+          const requirement = requirements[index]!;
+          const artifact = byId.get(binding.artifact_id);
+          requireRecord(binding.input_name === requirement.input_name && artifact !== undefined
+            && binding.sha256 === artifact.sha256 && artifact.type === requirement.type && artifact.version === requirement.version
+            && artifact.verification.status === requirement.verification_status
+            && (requirement.artifact_id === undefined || requirement.artifact_id === artifact.id),
+          'Recorded input binding does not match its Task facts.');
+        }
+      }
       const produced = artifacts.filter(artifact => artifact.producer.session_id === session.id);
       return {
         ...session,

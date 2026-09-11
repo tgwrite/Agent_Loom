@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { ApplicationDefinition } from './application/index.ts';
 import { validateApplication } from './application/index.ts';
 import { ContainerFailure } from './failure/index.ts';
-import { diagnosticFor, readSafeDiagnostic } from './failure/diagnostic.ts';
+import { diagnosticFor } from './failure/diagnostic.ts';
 import type { SafeDiagnostic } from './failure/diagnostic.ts';
 import { inspectTask, taskInspectionView } from './inspection.ts';
-import type { TaskSnapshot } from './inspection.ts';
+import { consumedInputs, receiptFromSession, requestedInputs } from './agent-receipt.ts';
+import type { AgentReceipt } from './agent-receipt.ts';
+export type { AgentReceipt } from './agent-receipt.ts';
 import { executeSession, prepareSession } from './governance.ts';
 import type { SessionHost, SessionPlan } from './governance.ts';
 import { LocalTaskStore } from './storage/index.ts';
@@ -70,34 +72,6 @@ export interface AgentConnectionOptions {
   taskId: string;
   host?: AgentHostBinding;
 }
-export interface AgentReceipt {
-  schema_version: 1;
-  request_id: string;
-  task_id: string;
-  entry_id: string;
-  session_id: string | null;
-  execution: { status: 'not-started' | 'running' | 'completed' | 'failed' | 'unknown'; domain_execution_started: boolean | 'unknown' };
-  artifacts: { id: string; type: string; version: string; producer_plugin_id: string }[];
-  aspect_failures: { plugin_id: string; reason_code: string }[];
-  business_acceptance: { status: 'not-evaluated' };
-  diagnostic?: SafeDiagnostic;
-  inspection_ref: { task_id: string; session_id: string | null };
-  retry_safety: 'not-established';
-}
-function receipt(snapshot: TaskSnapshot, sessionId: string): AgentReceipt {
-  const session = taskInspectionView(snapshot).sessions.find(s => s.id === sessionId);
-  if (!session?.request) throw new ContainerFailure('InvalidRecord', 'Session has no invocation request.');
-  const diagnostic = readSafeDiagnostic(session.failure?.diagnostic);
-  return { schema_version: 1, request_id: session.request.request_id, task_id: session.task_id,
-    entry_id: session.request.entry_id, session_id: session.id,
-    execution: { status: session.status, domain_execution_started: session.status === 'running' ? 'unknown' : session.events.some(e => e.type === 'runtime.loom.domain-started')
-      ? true : diagnostic?.domain_execution_started ?? (session.status === 'completed' ? 'unknown' : false) },
-    artifacts: session.produced.map(a => ({ id: a.id, type: a.type, version: a.version, producer_plugin_id: a.producer.plugin_id })),
-    aspect_failures: session.aspect_failures.map(a => ({ plugin_id: a.plugin_id, reason_code: readSafeDiagnostic(a.failure.diagnostic)?.reason_code ?? 'ASPECT_FAILED' })),
-    business_acceptance: { status: 'not-evaluated' }, ...(diagnostic ? { diagnostic } : {}),
-    inspection_ref: { task_id: session.task_id, session_id: session.id }, retry_safety: 'not-established' };
-}
-
 /** Small public facade over the existing Task snapshot, resolver and execution Kernel. */
 export async function connectLoom(options: AgentConnectionOptions) {
   const store = await LocalTaskStore.open(options.taskRoot);
@@ -117,7 +91,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
     async check(value: AgentRequest, checkOptions: { native_preflight?: boolean } = {}) {
       const request = requestCopy(value);
       const profile = profileFor(application, request.entry_id);
-      const blockers: { diagnostic: SafeDiagnostic; input_name?: string; candidates?: string[] }[] = [];
+      const blockers: { stage?: string; diagnostic: SafeDiagnostic; input_name?: string; candidates?: string[] }[] = [];
       const inputs: { name: string | null; status: 'satisfied' | 'blocked'; artifact_id?: string; candidates: string[] }[] = [];
       const artifacts = await store.listArtifacts();
       for (const requirement of invocationRequirements(profile, store.task.id, request)) {
@@ -134,22 +108,34 @@ export async function connectLoom(options: AgentConnectionOptions) {
           inputs.push({ name: requirement.input_name ?? null, status: 'blocked', candidates });
         }
       }
-      let hostBindings = 'not-checked';
-      let native = 'not-checked';
-      if (hostDelivery !== 'declared') blockers.push({ diagnostic: diagnosticFor(new ContainerFailure('NativeIntegrationNotReady', 'Host missing.'), 'host', false) });
+      type CheckStatus = 'not-checked' | 'passed' | 'failed';
+      let hostBindings: CheckStatus = 'not-checked';
+      let native: CheckStatus = 'not-checked';
+      let bindingsReason: string | null = 'prior-blocker';
+      let nativeReason: string | null = checkOptions.native_preflight ? 'prior-blocker' : 'not-requested';
+      let nativeAttempted = false;
+      if (hostDelivery !== 'declared') blockers.push({ stage: 'host-delivery', diagnostic: diagnosticFor(new ContainerFailure('NativeIntegrationNotReady', 'Host missing.'), 'host', false) });
       if (blockers.length === 0 && binding) {
         const plan = await prepareSession(store, profile.id, undefined, request);
-        try {
-          if (binding.checkBindings) { await binding.checkBindings(structuredClone(plan)); hostBindings = 'passed'; }
-          if (checkOptions.native_preflight) {
-            if (!binding.nativePreflight) throw new ContainerFailure('NativeIntegrationNotReady', 'Native preflight is unavailable.');
-            await binding.nativePreflight(structuredClone(plan)); native = 'passed';
+        bindingsReason = binding.checkBindings ? null : 'unsupported';
+        if (binding.checkBindings) {
+          try { await binding.checkBindings(structuredClone(plan)); hostBindings = 'passed'; }
+          catch (error) { hostBindings = 'failed'; blockers.push({ stage: 'host-bindings', diagnostic: diagnosticFor(error, 'host', false) }); }
+        }
+        if (checkOptions.native_preflight && blockers.length === 0) {
+          if (!binding.nativePreflight) {
+            nativeReason = 'unsupported';
+            blockers.push({ stage: 'native-preflight', diagnostic: diagnosticFor(new ContainerFailure('NativeIntegrationNotReady', 'Native preflight is unavailable.'), 'host', false) });
+          } else {
+            nativeReason = null; nativeAttempted = true;
+            try { await binding.nativePreflight(structuredClone(plan)); native = 'passed'; }
+            catch (error) { native = 'failed'; blockers.push({ stage: 'native-preflight', diagnostic: diagnosticFor(error, 'host', false) }); }
           }
-        } catch (error) { blockers.push({ diagnostic: diagnosticFor(error, 'host', false) }); }
+        }
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
-        declaration: 'valid', inputs, blockers, host: { delivery: hostDelivery, bindings: hostBindings },
-        native_preflight: { status: native, coverage: native === 'passed' ? 'host-defined-resources' : 'none', effect_scope: checkOptions.native_preflight ? 'trusted-native-code-may-load' : 'none' },
+        declaration: 'valid', inputs, blockers, host: { delivery: hostDelivery, bindings: hostBindings, bindings_unchecked_reason: bindingsReason },
+        native_preflight: { status: native, unchecked_reason: nativeReason, coverage: native === 'passed' ? 'host-defined-resources' : 'none', effect_scope: nativeAttempted ? 'trusted-native-code-may-load' : 'none' },
         unchecked: ['artifact-bytes', 'model-configuration', 'credentials', 'domain-initialization', 'business-acceptance', 'external-side-effects'],
         observation_only: true };
     },
@@ -170,22 +156,26 @@ export async function connectLoom(options: AgentConnectionOptions) {
       } catch (error) { failure = error; }
       try {
         const snapshot = await inspectTask(store);
-        if (sessionId && snapshot.sessions.some(s => s.id === sessionId)) {
-          const result = receipt(snapshot, sessionId);
-          if (failure instanceof ContainerFailure && failure.code === 'StorageFailure') {
-            result.execution.status = 'unknown'; result.diagnostic = diagnosticFor(failure, 'governance-storage', started);
-          }
+        const session = sessionId ? taskInspectionView(snapshot).sessions.find(s => s.id === sessionId) : undefined;
+        if (session) {
+          const result = receiptFromSession(session);
+          if (failure instanceof ContainerFailure && failure.code === 'StorageFailure' && !result.observation.outcome_confirmed)
+            result.call_diagnostic = diagnosticFor(failure, 'governance-storage', started);
           return result;
         }
         if (failure instanceof ContainerFailure && failure.code === 'StorageFailure') throw failure;
       } catch (error) {
         return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
           session_id: sessionId, execution: { status: 'unknown', domain_execution_started: started }, artifacts: [], aspect_failures: [],
+          observation: { history: 'unreadable', recorded_session_status: null, outcome_confirmed: false },
+          requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
           business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(error, 'governance-storage', started),
           inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
-        session_id: null, execution: { status: 'not-started', domain_execution_started: false }, artifacts: [], aspect_failures: [],
+        session_id: sessionId, execution: { status: sessionId ? 'unknown' : 'not-started', domain_execution_started: false }, artifacts: [], aspect_failures: [],
+        observation: { history: 'readable', recorded_session_status: null, outcome_confirmed: sessionId === null },
+        requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
         business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(failure, 'native', false),
         inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
     },
@@ -193,16 +183,26 @@ export async function connectLoom(options: AgentConnectionOptions) {
       if (filter.entry_id) profileFor(application, filter.entry_id);
       try {
         const snapshot = await inspectTask(store);
-        const sessions = snapshot.sessions.filter(s => (!filter.entry_id || (s.request?.entry_id ?? application.profiles.find(p => p.id === s.profile_id)?.entry?.id ?? s.profile_id) === filter.entry_id)
+        const view = taskInspectionView(snapshot);
+        const sessions = view.sessions.filter(s => (!filter.entry_id || (s.request?.entry_id ?? application.profiles.find(p => p.id === s.profile_id)?.entry?.id ?? s.profile_id) === filter.entry_id)
           && (!filter.session_id || s.id === filter.session_id) && (!filter.request_id || s.request?.request_id === filter.request_id)
-          && (!filter.artifact_id || s.produced.some(a => a.id === filter.artifact_id) || s.consumed.some(a => a.artifact_id === filter.artifact_id)));
+          && (!filter.artifact_id || s.produced.some(a => a.id === filter.artifact_id) || s.consumed.some(a => a.artifact_id === filter.artifact_id)
+            || s.resolved_inputs?.bindings.some(a => a.artifact_id === filter.artifact_id)));
+        const sessionIds = new Set(sessions.map(s => s.id));
+        const relatedArtifacts = new Set(sessions.flatMap(s => [...s.produced.map(a => a.id),
+          ...s.consumed.map(c => c.artifact_id), ...(s.resolved_inputs?.bindings.map(b => b.artifact_id) ?? [])]));
         return { schema_version: 1, task_id: store.task.id, history: 'readable',
           readiness: { host_delivery: hostDelivery, native_compatibility: 'not-checked', credentials: 'unknown', external_side_effects: 'unknown' },
-          sessions: sessions.map(s => s.request ? receipt(snapshot, s.id) : { session_id: s.id, profile_id: s.profile_id,
-            execution: { status: s.status }, request_id: null, identity_migration: 'not-inferred' }),
+          sessions: sessions.map(s => s.request ? receiptFromSession(s) : { session_id: s.id, profile_id: s.profile_id,
+            execution: { status: s.status }, request_id: null, identity_migration: 'not-inferred',
+            resolved_inputs: { status: s.resolved_inputs ? 'recorded' : 'unavailable', bindings: structuredClone(s.resolved_inputs?.bindings ?? []) },
+            consumed: consumedInputs(s) }),
           artifacts: snapshot.artifacts.filter(a => (!filter.artifact_id || a.id === filter.artifact_id)
-            && ((!filter.session_id && !filter.entry_id && !filter.request_id) || sessions.some(s => s.id === a.producer.session_id || s.consumed.some(c => c.artifact_id === a.id))))
-            .map(a => ({ id: a.id, type: a.type, version: a.version, producer: a.producer, sha256: a.sha256, verification: a.verification })) };
+            && ((!filter.session_id && !filter.entry_id && !filter.request_id) || relatedArtifacts.has(a.id)))
+            .map(a => ({ id: a.id, type: a.type, version: a.version, producer: a.producer, sha256: a.sha256, verification: a.verification,
+              consumers: a.consumers.filter(c => (!filter.session_id && !filter.entry_id && !filter.request_id) || sessionIds.has(c.session_id))
+                .map(c => ({ id: c.id, artifact_id: c.artifact_id, accepted_sha256: c.sha256, consumer_session_id: c.session_id,
+                  consumer_plugin_id: c.consumer_plugin_id, consumed_at: c.consumed_at })) })) };
       } catch (error) {
         return { schema_version: 1, task_id: store.task.id, history: 'unreadable',
           diagnostic: diagnosticFor(error, 'governance-storage'), sessions: [], artifacts: [] };

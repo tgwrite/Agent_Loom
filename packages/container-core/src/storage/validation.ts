@@ -21,6 +21,18 @@ export function validateTask(value: TaskRecord): void {
 }
 
 export function validateSession(value: SessionRunRecord): void {
+  if (value.resolved_inputs !== undefined) {
+    const snapshot = value.resolved_inputs;
+    requireRecord(snapshot !== null && snapshot.binding_version === 1 && Array.isArray(snapshot.bindings), 'Unsupported input binding snapshot.');
+    requireRecord(Object.keys(snapshot).every(key => ['binding_version', 'bindings'].includes(key)), 'Unknown input snapshot field.');
+    snapshot.bindings.forEach((binding, index) => {
+      requireRecord(binding !== null && binding.requirement_index === index, 'Invalid input requirement index.');
+      requireRecord(Object.keys(binding).every(key => ['requirement_index', 'input_name', 'artifact_id', 'sha256'].includes(key)), 'Unknown input binding field.');
+      identifier(binding.artifact_id);
+      if (binding.input_name !== undefined) identifier(binding.input_name);
+      requireRecord(typeof binding.sha256 === 'string' && /^[a-f0-9]{64}$/.test(binding.sha256), 'Invalid input digest.');
+    });
+  }
   if (value.request !== undefined) { validateRequest(value.request); requireRecord(value.request.task_id === value.task_id, 'Request Task identity mismatch.'); }
   identifier(value.id);
   identifier(value.task_id);

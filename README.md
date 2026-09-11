@@ -65,7 +65,7 @@ candidate; real webpage/report/review acceptance is still required before releas
 
 ## Agent service preview
 
-The local alpha.3 candidate adds `agent-loom/agent` and `loom agent` discovery,
+The local alpha.4 candidate provides `agent-loom/agent` and `loom agent` discovery,
 description, checks, invocation and inspection. Entries are existing Profiles;
 requests use named Artifact identities and are saved per Session. Pi creates only
 selected adapters, and safe failure reasons survive into receipts. Execution and

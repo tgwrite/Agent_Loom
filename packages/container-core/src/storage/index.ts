@@ -111,7 +111,15 @@ export class LocalTaskStore {
       && JSON.stringify(session.aspect_plugin_ids) === JSON.stringify(profile.aspects),
     'Session composition does not match its Task Application snapshot.');
     // Dependency resolution is a precondition, never proof of successful consumption.
-    for (const requirement of invocationRequirements(profile, this.#task.id, session.request)) await this.resolveArtifact(requirement);
+    const requirements = invocationRequirements(profile, this.#task.id, session.request);
+    if (session.resolved_inputs) requireRecord(session.resolved_inputs.bindings.length === requirements.length, 'Input bindings do not match requirements.');
+    for (const [index, requirement] of requirements.entries()) {
+      const artifact = await this.resolveArtifact(requirement);
+      const selected = session.resolved_inputs?.bindings[index];
+      if (selected) requireRecord(selected.input_name === requirement.input_name
+        && selected.artifact_id === artifact.id && selected.sha256 === artifact.sha256,
+      'Input binding does not match the resolved Artifact.');
+    }
     await io(async () => {
       const directory = join(this.#root, 'sessions', session.id);
       await mkdir(directory);

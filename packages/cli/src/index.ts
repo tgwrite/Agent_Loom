@@ -1,5 +1,6 @@
 import { connectLoom, discoverEntries, describeEntry } from '../../container-core/src/agent.ts';
 import type { AgentRequest } from '../../container-core/src/invocation.ts';
+import { validateRequest } from '../../container-core/src/invocation.ts';
 import { dirname, resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -139,6 +140,7 @@ function output(value: unknown, json: boolean): void {
 export async function main(args: string[]): Promise<number> {
   let phase = 'arguments';
   const command = args.slice(0, 2).join(' ');
+  let knownCommand = false;
   try {
     if (args.length === 0 || (args.length === 1 && ['--help', '-h'].includes(args[0]!))) {
       console.log(help);
@@ -158,6 +160,7 @@ export async function main(args: string[]): Promise<number> {
       'artifact inspect': ['--task', '--root', '--json'],
     };
     if (!allowed[command]) throw new ContainerFailure('InvalidArguments', 'Unknown command. Use loom --help.');
+    knownCommand = true;
     if (args.length === 3 && args[2] === '--help') { console.log(help); return 0; }
     const options = argumentsFor(args.slice(2), allowed[command]);
     const needsPositional = !['task create', 'session start', 'agent discover', 'agent check', 'agent invoke', 'agent inspect'].includes(command);
@@ -191,13 +194,17 @@ export async function main(args: string[]): Promise<number> {
       const appFile = options.value('--app');
       if (appFile) {
         if (options.value('--task') || options.value('--root')) throw new ContainerFailure('InvalidArguments', 'Choose an Application or a Task.');
+        phase = 'application-loading';
         const { application } = await loadApplication(appFile);
         output(command === 'agent discover' ? discoverEntries(application, filter) : describeEntry(application, options.positionals[0]!), true);
         return 0;
       }
-      const store = await catalog.open(options.required('--task'), options.value('--root'));
+      const taskId = options.required('--task');
+      phase = 'task-loading';
+      const store = await catalog.open(taskId, options.value('--root'));
       if (command === 'agent discover') { output(discoverEntries(store.task.application, filter), true); return 0; }
       if (command === 'agent describe') { output(describeEntry(store.task.application, options.positionals[0]!), true); return 0; }
+      phase = 'host-loading';
       let selectedHost = options.value('--host-module');
       let invalidHost = false;
       if (!selectedHost) {
@@ -211,25 +218,34 @@ export async function main(args: string[]): Promise<number> {
         if (!selectedHost) throw new ContainerFailure('NativeIntegrationNotReady', 'Host delivery is invalid.');
         return selectedHost;
       };
+      phase = 'task-loading';
       const loom = await connectLoom({ taskRoot: store.taskRoot, taskId: store.task.id,
         ...(selectedHost || invalidHost ? { host: { actor: { id: 'local-operator' }, delivery: invalidHost ? 'invalid' as const : 'declared' as const,
-          createHost: () => loadHost(hostPath(), store),
-          nativePreflight: async () => validateNativeHost(hostPath(), store.task.application),
+          createHost: async ({ store: active }) => {
+            phase = 'host-loading'; const host = await loadHost(hostPath(), active);
+            phase = 'session-execution'; return host;
+          },
+          nativePreflight: async () => { phase = 'host-preflight'; await validateNativeHost(hostPath(), store.task.application); },
         } } : {}) });
       if (command === 'agent inspect') {
-        output(await loom.inspect({ ...(options.value('--entry') ? { entry_id: options.value('--entry')! } : {}),
+        phase = 'inspection';
+        const facts = await loom.inspect({ ...(options.value('--entry') ? { entry_id: options.value('--entry')! } : {}),
           ...(options.value('--session') ? { session_id: options.value('--session')! } : {}),
           ...(options.value('--request-id') ? { request_id: options.value('--request-id')! } : {}),
-          ...(options.value('--artifact') ? { artifact_id: options.value('--artifact')! } : {}) }), true);
-        return 0;
+          ...(options.value('--artifact') ? { artifact_id: options.value('--artifact')! } : {}) });
+        output(facts, true); return facts.history === 'readable' ? 0 : 1;
       }
+      phase = 'arguments';
       let request: AgentRequest;
       try { request = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(resolve(options.required('--request'))))); }
       catch { throw new ContainerFailure('InvalidArguments', 'Request must be a readable UTF-8 JSON file.'); }
+      validateRequest(request);
       if (command === 'agent check') {
+        phase = 'dependency-resolution';
         const checked = await loom.check(request, { native_preflight: options.flags.has('--native-preflight') });
         output(checked, true); return checked.blockers.length ? 1 : 0;
       }
+      phase = 'dependency-resolution';
       const result = await loom.invoke(request);
       output(result, true); return result.execution.status === 'completed' ? 0 : 1;
     }
@@ -305,8 +321,7 @@ export async function main(args: string[]): Promise<number> {
     const failure = error instanceof ContainerFailure ? error
       : new ContainerFailure('StorageFailure', 'Operation failed. Inspect local configuration and filesystem access.');
     console.error(JSON.stringify({ error: { code: failure.code, message: failure.message, details: failure.details },
-      diagnostic: diagnose(failure, ['app validate', 'task create', 'task inspect', 'session start', 'session inspect', 'artifact inspect'].includes(command)
-        ? command : 'unknown', phase) }));
+      diagnostic: diagnose(failure, knownCommand ? command : 'unknown', phase) }));
     return 1;
   }
 }
