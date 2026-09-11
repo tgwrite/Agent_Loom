@@ -3,8 +3,9 @@ import { ContainerFailure } from './failure/index.ts';
 import { readSafeDiagnostic } from './failure/diagnostic.ts';
 import type { SafeDiagnostic } from './failure/diagnostic.ts';
 import type { TaskInspection } from './inspection.ts';
-import type { ResolvedInput, SessionRunRecord } from './session/index.ts';
+import type { ResolvedInput, SessionRunRecord, SessionProfile } from './session/index.ts';
 import type { AgentRequest } from './invocation.ts';
+import { readParticipantObservation } from './participant-observation.ts';
 
 export interface AgentReceipt {
   schema_version: 1;
@@ -20,7 +21,8 @@ export interface AgentReceipt {
     consumer_session_id: string; consumer_plugin_id: string; consumed_at: string; input_names: string[] | null }[];
   artifacts: { id: string; type: string; version: string; producer_plugin_id: string }[];
   aspect_failures: { plugin_id: string; reason_code: string }[];
-  business_acceptance: { status: 'not-evaluated' };
+  participants: ParticipantSummary;
+  business_acceptance: { status: 'not-evaluated'; references?: { artifact_id: string; producer_plugin_id: string; type: string; version: string }[] };
   diagnostic?: SafeDiagnostic;
   /** Immediate observation only; not a replacement for persisted outcome evidence. */
   call_diagnostic?: SafeDiagnostic;
@@ -40,8 +42,39 @@ export function receiptFromSession(session: TaskInspection['sessions'][number]):
     requested_inputs: requestedInputs(session.request), ...projectSessionFacts(session) };
 }
 
+export interface ParticipantSummary {
+  primary: { plugin_id: string; status: 'completed' | 'failed' | 'started' | 'not-observed' } | null;
+  aspects: { plugin_id: string; status: 'completed' | 'failed' | 'unconfirmed' | 'publication-observed' | 'not-observed';
+    evidence_scope: 'after-run' | 'recorded-failure' | 'publication-only' | 'none'; artifact_ids: string[] }[];
+}
+
+export function unobservedParticipants(profile: SessionProfile): ParticipantSummary {
+  return { primary: profile.primary ? { plugin_id: profile.primary, status: 'not-observed' } : null,
+    aspects: profile.aspects.map(plugin_id => ({ plugin_id, status: 'not-observed', evidence_scope: 'none', artifact_ids: [] })) };
+}
+
+function participants(session: TaskInspection['sessions'][number]): ParticipantSummary {
+  const observations = session.events.map(readParticipantObservation).filter(observation => observation !== undefined);
+  const domain = observations.filter(observation => observation.plugin_id === session.primary_plugin_id && observation.phase === 'domain-run');
+  const primary: ParticipantSummary['primary'] = session.primary_plugin_id ? { plugin_id: session.primary_plugin_id,
+    status: domain.some(observation => observation.status === 'failed') ? 'failed'
+      : domain.filter(observation => observation.status === 'completed').length === 1 ? 'completed'
+      : session.events.some(event => event.type === 'runtime.loom.domain-started') ? 'started' : 'not-observed' } : null;
+  return { primary, aspects: session.aspect_plugin_ids.map(plugin_id => {
+    const events = observations.filter(observation => observation.plugin_id === plugin_id && observation.phase === 'aspect-after-run');
+    const started = events.filter(observation => observation.status === 'started');
+    const completed = events.filter(observation => observation.status === 'completed');
+    const failed = session.aspect_failures.some(failure => failure.plugin_id === plugin_id) || events.some(observation => observation.status === 'failed');
+    const artifact_ids = session.produced.filter(artifact => artifact.producer.plugin_id === plugin_id).map(artifact => artifact.id);
+    const confirmed = started.length === 1 && completed.length === 1 && events.indexOf(started[0]!) < events.indexOf(completed[0]!);
+    return { plugin_id, artifact_ids, status: failed ? 'failed' : confirmed ? 'completed'
+      : started.length || completed.length ? 'unconfirmed' : artifact_ids.length ? 'publication-observed' : 'not-observed',
+      evidence_scope: failed ? 'recorded-failure' : started.length || completed.length ? 'after-run' : artifact_ids.length ? 'publication-only' : 'none' };
+  }) };
+}
+
 type SessionFacts = Pick<AgentReceipt, 'execution' | 'observation' | 'resolved_inputs' | 'consumed'
-  | 'artifacts' | 'aspect_failures' | 'business_acceptance' | 'diagnostic' | 'inspection_ref' | 'retry_safety'>;
+  | 'artifacts' | 'aspect_failures' | 'participants' | 'business_acceptance' | 'diagnostic' | 'inspection_ref' | 'retry_safety'>;
 
 /** Both supported entrypoints interpret governance evidence without inventing request identity. */
 export function projectSessionFacts(session: TaskInspection['sessions'][number]): SessionFacts {
@@ -64,7 +97,12 @@ export function projectSessionFacts(session: TaskInspection['sessions'][number])
     consumed: consumedInputs(session),
     artifacts: session.produced.map(a => ({ id: a.id, type: a.type, version: a.version, producer_plugin_id: a.producer.plugin_id })),
     aspect_failures: session.aspect_failures.map(a => ({ plugin_id: a.plugin_id, reason_code: readSafeDiagnostic(a.failure.diagnostic)?.reason_code ?? 'ASPECT_FAILED' })),
-    business_acceptance: { status: 'not-evaluated' }, ...(diagnostic ? { diagnostic } : {}),
+    participants: participants(session),
+    business_acceptance: { status: 'not-evaluated', references: session.produced.filter(artifact =>
+      session.acceptance_artifact_contracts.some(contract => contract.producer_plugin_id === artifact.producer.plugin_id
+        && contract.type === artifact.type && contract.version === artifact.version))
+      .map(artifact => ({ artifact_id: artifact.id, producer_plugin_id: artifact.producer.plugin_id, type: artifact.type, version: artifact.version })) },
+    ...(diagnostic ? { diagnostic } : {}),
     inspection_ref: { task_id: session.task_id, session_id: session.id }, retry_safety: 'not-established' };
 }
 

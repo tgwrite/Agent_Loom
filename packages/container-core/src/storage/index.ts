@@ -184,6 +184,11 @@ export class LocalTaskStore {
 
   async listEvents(sessionId: string): Promise<EventEnvelope[]> {
     const session = await this.getSession(sessionId);
+    return this.#eventsFor(session);
+  }
+
+  async #eventsFor(session: SessionRunRecord): Promise<EventEnvelope[]> {
+    const sessionId = session.id;
     const events = await this.#lines(join('sessions', sessionId, 'events.jsonl'), validateEvent);
     for (const event of events) {
       this.#assertTask(event.task_id);
@@ -211,13 +216,17 @@ export class LocalTaskStore {
   }
 
   async listArtifacts(): Promise<ArtifactRecord[]> {
+    return this.#readArtifacts(id => this.getSession(id));
+  }
+
+  async #readArtifacts(sessionFor: (id: string) => Promise<SessionRunRecord>): Promise<ArtifactRecord[]> {
     const artifacts = await this.#lines('artifacts.jsonl', validateArtifact);
     const ids = new Set<string>();
     for (const artifact of artifacts) {
       this.#assertTask(artifact.task_id);
       requireRecord(!ids.has(artifact.id), 'Duplicate Artifact identity in registry.');
       ids.add(artifact.id);
-      this.#assertProvenance(artifact, await this.getSession(artifact.producer.session_id));
+      this.#assertProvenance(artifact, await sessionFor(artifact.producer.session_id));
     }
     return artifacts;
   }
@@ -271,13 +280,17 @@ export class LocalTaskStore {
   }
 
   async listConsumptions(): Promise<ArtifactConsumptionRecord[]> {
+    return this.#readConsumptions(await this.listArtifacts(), id => this.getSession(id));
+  }
+
+  async #readConsumptions(artifactRecords: ArtifactRecord[], sessionFor: (id: string) => Promise<SessionRunRecord>): Promise<ArtifactConsumptionRecord[]> {
     const records = await this.#lines('consumptions.jsonl', validateConsumption);
-    const artifacts = new Map((await this.listArtifacts()).map((artifact) => [artifact.id, artifact]));
+    const artifacts = new Map(artifactRecords.map((artifact) => [artifact.id, artifact]));
     const ids = new Set<string>();
     const bindings = new Set<string>();
     for (const record of records) {
       this.#assertTask(record.task_id);
-      const session = await this.getSession(record.session_id);
+      const session = await sessionFor(record.session_id);
       const artifact = artifacts.get(record.artifact_id);
       const binding = JSON.stringify([record.session_id, record.consumer_plugin_id, record.artifact_id]);
       requireRecord(!ids.has(record.id) && !bindings.has(binding), 'Duplicate consumption in registry.');
@@ -287,6 +300,21 @@ export class LocalTaskStore {
       bindings.add(binding);
     }
     return records;
+  }
+
+  /** Per-read index only. Reuses the same provenance validators; never caches across calls. */
+  async readInspectionRecords() {
+    const sessions = await this.listSessions();
+    const byId = new Map(sessions.map(session => [session.id, session]));
+    const sessionFor = async (id: string): Promise<SessionRunRecord> => {
+      const session = byId.get(id);
+      requireRecord(session !== undefined, 'Registry refers to an unavailable Session.');
+      return session!;
+    };
+    const artifacts = await this.#readArtifacts(sessionFor);
+    const consumptions = await this.#readConsumptions(artifacts, sessionFor);
+    const events = new Map(await Promise.all(sessions.map(async session => [session.id, await this.#eventsFor(session)] as const)));
+    return { sessions, artifacts, consumptions, events };
   }
 
   async recordObserverFailure(sessionId: string, pluginId: string, failure: FailureRecord,

@@ -10,7 +10,7 @@ scripts, compiler, or third-party runtime downloads.
 From the directory containing the archive:
 
 ```sh
-npm install --global ./agent-loom-0.1.0-alpha.4.tgz --offline --ignore-scripts --no-audit --no-fund
+npm install --global ./agent-loom-0.1.0-alpha.5.tgz --offline --ignore-scripts --no-audit --no-fund
 loom --version
 loom --help
 ```
@@ -25,7 +25,7 @@ In a separate, empty project, copy the archive into the project first:
 
 ```sh
 npm init -y
-npm install ./agent-loom-0.1.0-alpha.4.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
+npm install ./agent-loom-0.1.0-alpha.5.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
 npm pkg set "scripts.loom=loom"
 npm run loom -- --version
 ```

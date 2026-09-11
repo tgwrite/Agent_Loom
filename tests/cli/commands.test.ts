@@ -11,6 +11,34 @@ const executable = resolve('bin/loom.mjs');
 const application = resolve('tests/fixtures/synthetic.app.ts');
 const processFixture = resolve('tests/fixtures/session-process.mjs');
 
+test('CLI reports the missing entry field and accepts the corrected definition without loading its Host', async t => {
+  const f = await scratch(t);
+  const app = join(f.directory, 'entry.app.mjs');
+  const { testApplication } = await import('../helpers.ts');
+  const entry: Record<string, unknown> = { id: 'sample.run', purpose: 'Synthetic entry', request_mapping: 'v1' };
+  const save = () => writeFile(app, `export const nativeHost = './host.mjs'; export const application = ${JSON.stringify({
+    ...testApplication, profiles: [{ ...testApplication.profiles[0], entry }],
+  })};`);
+  await writeFile(join(f.directory, 'host.mjs'), 'throw new Error("synthetic-host-canary");');
+  const args = ['app', 'validate', app, '--definition-only', '--explain', '--json'];
+  for (const field of ['implementation', 'effect_declarations']) {
+    await save();
+    const result = run(args, f.env);
+    assert.equal(result.status, 1);
+    const failure = JSON.parse(result.stderr);
+    assert.equal(failure.error.code, 'InvalidDefinition');
+    assert.equal(failure.error.details.path, `profiles[0].entry.${field}`);
+    assert.equal(failure.diagnostic.phase, 'application-loading');
+    assert(!result.stderr.includes('synthetic-host-canary'));
+    entry[field] = field === 'implementation' ? 'native' : [];
+  }
+  await save();
+  const result = run(args, f.env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).definition, 'valid');
+  assert.equal(JSON.parse(result.stdout).native_integration, 'not-verified');
+});
+
 test('CLI snapshots validated opaque input and rejects bad input before creating a Task', async t => {
   const f = await scratch(t);
   const app = join(f.directory, 'input.app.mjs'), input = join(f.directory, 'input.json');

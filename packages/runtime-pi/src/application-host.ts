@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
-import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
+import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath, recordParticipantObservation } from '../../container-core/src/index.ts';
 import type { ArtifactRef, ArtifactProducerPhase, LocalTaskStore, ObserverFailureContext, AgentRequest, SessionPlan } from '../../container-core/src/index.ts';
 import { createPiSessionHost } from './session-host.ts';
 import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
@@ -84,6 +84,12 @@ function createSelectedHost(options: PiApplicationHostOptions, profileId: string
     await store.appendEvent({ id: randomUUID(), type: `runtime.pi.${event}`, timestamp: new Date().toISOString(),
       task_id: store.task.id, session_id: session.id, actor_id: session.actor.id,
       source: 'runtime-pi', correlation_id: session.id, payload: origin ? { ...origin } : {} });
+    if ((event === 'domain-completed' || event === 'execution-rejected') && session.primary_plugin_id)
+      await recordParticipantObservation(store, session.id, { plugin_id: session.primary_plugin_id, phase: 'domain-run',
+        status: event === 'domain-completed' ? 'completed' : 'failed' });
+    if ((event === 'aspect-started' || event === 'aspect-completed') && origin?.plugin_id)
+      await recordParticipantObservation(store, session.id, { plugin_id: origin.plugin_id, phase: 'aspect-after-run',
+        status: event === 'aspect-started' ? 'started' : 'completed' });
     if (event === 'aspect-error' && origin?.plugin_id) await aspectFailure(context, origin.plugin_id, origin.phase, 'native-hook');
   });
   const rejection = async (event: string, context: PiSessionContext) => {
@@ -137,6 +143,7 @@ function createSelectedHost(options: PiApplicationHostOptions, profileId: string
       try {
         const publications = await primary(context).run!(session, domainContext(context));
         await publish(context, context.plan.primary_plugin_id!, publications, 'domain-run');
+        await observe('domain-completed', context);
       } catch (error) { outcome = 'failed'; domainError = error; await rejection('execution-rejected', context); }
       for (const pluginId of context.plan.aspect_plugin_ids) {
         const plugin = store.task.application.plugins.find(p => p.id === pluginId)!;

@@ -8,11 +8,40 @@ export type SafeDiagnostic = {
   reason_code: string;
   input_name?: string;
   artifact_id?: string;
+  check?: HostReadinessCheck;
+  next_step?: string;
   domain_execution_started?: boolean;
   retry_safety: 'not-established';
 }
 const boundaries = new Set(['artifact-input', 'domain', 'native', 'aspect', 'governance-storage', 'host', 'request']);
 const trusted = new WeakMap<object, SafeDiagnostic>();
+const hostSteps = {
+  'host-import': 'Check that the local Host module and its dependencies can be imported.',
+  'host-contract': 'Export the required Host functions with the documented signatures.',
+  'sdk-version': 'Match the selected SDK version to the Application runtime version.',
+  'sdk-surface': 'Provide the SDK functions required by the Pi Host adapter.',
+  'adapter-registration': 'Register an adapter for every selected Plugin binding key.',
+  'plugin-entry': 'Check selected Plugin entry files and duplicate resolved entries.',
+  'prompt-directory': 'Check the explicitly configured prompt directories.',
+  'extension-loading': 'Check native extension exports and their local dependencies.',
+  'launcher': 'Run the application launcher probe and check its local configuration.',
+} as const;
+export type HostReadinessCheck = keyof typeof hostSteps;
+
+/** Only reviewed stage names and static recovery hints cross the native boundary. */
+export function hostReadinessFailure(check: HostReadinessCheck): ContainerFailure {
+  if (!Object.hasOwn(hostSteps, check)) throw new ContainerFailure('InvalidArguments', 'Unknown Host readiness check.');
+  const diagnostic: SafeDiagnostic = { diagnostic_version: 1, boundary: 'host', reason_code: 'HOST_UNAVAILABLE',
+    check, next_step: hostSteps[check], retry_safety: 'not-established' };
+  const failure = new ContainerFailure('NativeIntegrationNotReady', 'Native Host readiness check failed.', { diagnostic });
+  trusted.set(failure, diagnostic);
+  return failure;
+}
+
+export function safeHostReadinessFailure(error: unknown, fallback: HostReadinessCheck): ContainerFailure {
+  const diagnostic = typeof error === 'object' && error !== null ? trusted.get(error) : undefined;
+  return hostReadinessFailure(diagnostic?.check ?? fallback);
+}
 
 /** Safe returned failure. Trust is process-local and does not survive serialization or cloning. */
 export function createNativeFailure(error: unknown, started?: boolean): FailureRecord {
@@ -32,6 +61,11 @@ export function readSafeDiagnostic(value: unknown): SafeDiagnostic | undefined {
     || d.retry_safety !== 'not-established') return undefined;
   const result: SafeDiagnostic = { diagnostic_version: 1, boundary: d.boundary as DiagnosticBoundary,
     reason_code: d.reason_code, retry_safety: 'not-established' };
+  if (d.check !== undefined) {
+    if (typeof d.check !== 'string' || !Object.hasOwn(hostSteps, d.check)) return undefined;
+    result.check = d.check as HostReadinessCheck;
+    result.next_step = hostSteps[result.check];
+  }
   for (const field of ['input_name', 'artifact_id'] as const) {
     if (d[field] !== undefined) {
       if (typeof d[field] !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(d[field])) return undefined;
@@ -81,6 +115,9 @@ export function diagnosticFor(error: unknown, boundary: DiagnosticBoundary, star
   const registered = typeof error === 'object' && error !== null ? trusted.get(error) : undefined;
   const code = error instanceof ContainerFailure ? error.code : undefined;
   const reason = code === 'StorageFailure' ? 'GOVERNANCE_STORAGE_FAILED'
+    : code === 'TaskWriterBusy' ? 'TASK_WRITER_BUSY'
+    : code === 'TaskOutcomeUnconfirmed' ? 'TASK_OUTCOME_UNCONFIRMED'
+    : code === 'TaskWriterReleaseFailed' ? 'TASK_WRITER_RELEASE_FAILED'
     : boundary === 'governance-storage' && code === 'InvalidRecord' ? 'GOVERNANCE_RECORD_INVALID'
     : code === 'PreconditionNotSatisfied' ? 'MISSING_DEPENDENCY'
     : code === 'BindingConflict' ? 'AMBIGUOUS_BINDING'

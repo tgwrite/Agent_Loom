@@ -6,6 +6,7 @@ import { diagnosticFor } from './failure/diagnostic.ts';
 import type { SafeDiagnostic } from './failure/diagnostic.ts';
 import { inspectTask, taskInspectionView } from './inspection.ts';
 import { projectSessionFacts, receiptFromSession, requestedInputs } from './agent-receipt.ts';
+import { unobservedParticipants } from './agent-receipt.ts';
 import type { AgentReceipt } from './agent-receipt.ts';
 export type { AgentReceipt } from './agent-receipt.ts';
 import { executeSession, prepareSession } from './governance.ts';
@@ -15,8 +16,13 @@ import { invocationRequirements, validateRequest, requestSchema } from './invoca
 import type { AgentRequest } from './invocation.ts';
 import type { ActorRef } from './actor/index.ts';
 import type { SessionProfile } from './session/index.ts';
+import { nativeReadinessReport } from './readiness.ts';
+import type { NativeReadinessReport } from './readiness.ts';
+import { operationSummary } from './operation.ts';
+import { identifier } from './record-validation.ts';
+import { withTaskWriter } from './task-writer.ts';
 
-export type { AgentRequest, EntryContract } from './invocation.ts';
+export type { AgentRequest, EntryContract, DataSchema } from './invocation.ts';
 export interface DiscoveryFilter { id?: string; name?: string; tag?: string; input_type?: string; output_type?: string }
 
 function profileFor(application: ApplicationDefinition, entryId: string): SessionProfile {
@@ -36,12 +42,13 @@ export function describeEntry(application: ApplicationDefinition, entryId: strin
     tags: entry?.tags ?? [], implementation: entry?.implementation ?? 'unknown',
     inputs: profile.requirements, outputs: primary?.produces ?? [], output_scope: 'primary-plugin-declarations',
     execution_scope: 'new-session', business_validator: 'application-owned',
+    acceptance_artifacts: entry?.acceptance_artifacts ?? [],
     request_mapping: entry?.request_mapping ?? 'unsupported',
     effect_declarations: entry?.effect_declarations ?? [], effects_enforcement: 'unknown',
-    retry_safety: 'not-guaranteed', examples: entry?.examples ?? [],
+    retry_safety: 'not-guaranteed', examples: entry?.examples ?? [], data_examples: entry?.data_examples ?? [],
     participants: { primary: profile.primary ?? null, aspects: profile.aspects },
     request_schema: requestSchema(profile),
-    parameter_validation: { envelope: 'schema-v1', data: 'application-owned', hard_limits: 'unsupported' } });
+    parameter_validation: { envelope: 'schema-v1', data: entry?.data_schema !== undefined ? 'loom-data-schema-v1' : 'application-owned', hard_limits: 'unsupported' } });
 }
 
 export function discoverEntries(application: ApplicationDefinition, filter: DiscoveryFilter = {}) {
@@ -65,15 +72,20 @@ export interface AgentHostBinding {
   /** Optional trusted read-only registration check. Must not instantiate adapters. */
   checkBindings?(plan: SessionPlan): Promise<void>;
   /** Explicit opt-in; may import native resources. Never implies model/credential validation. */
-  nativePreflight?(plan: SessionPlan): Promise<void>;
+  nativePreflight?(plan: SessionPlan): Promise<void | NativeReadinessReport>;
 }
 export interface AgentConnectionOptions {
   taskRoot: string;
   taskId: string;
   host?: AgentHostBinding;
+  /** All mutating clients must opt into the same cooperative local lock. */
+  writer_policy?: 'exclusive';
 }
 /** Small public facade over the existing Task snapshot, resolver and execution Kernel. */
 export async function connectLoom(options: AgentConnectionOptions) {
+  if (options.writer_policy !== undefined && options.writer_policy !== 'exclusive')
+    throw new ContainerFailure('InvalidArguments', 'Unsupported Task writer policy.');
+  const exclusiveWriter = options.writer_policy === 'exclusive';
   const store = await LocalTaskStore.open(options.taskRoot);
   if (store.task.id !== options.taskId) throw new ContainerFailure('InvalidRecord', 'Task identity does not match.');
   const application = store.task.application;
@@ -85,7 +97,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
     invocationRequirements(profileFor(application, request.entry_id), store.task.id, request);
     return request;
   };
-  return {
+  const services = {
     discover: (filter?: DiscoveryFilter) => discoverEntries(application, filter),
     describe: (entryId: string) => describeEntry(application, entryId),
     async check(value: AgentRequest, checkOptions: { native_preflight?: boolean } = {}) {
@@ -114,6 +126,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
       let bindingsReason: string | null = 'prior-blocker';
       let nativeReason: string | null = checkOptions.native_preflight ? 'prior-blocker' : 'not-requested';
       let nativeAttempted = false;
+      let nativeChecks = nativeReadinessReport(undefined);
       if (hostDelivery !== 'declared') blockers.push({ stage: 'host-delivery', diagnostic: diagnosticFor(new ContainerFailure('NativeIntegrationNotReady', 'Host missing.'), 'host', false) });
       if (blockers.length === 0 && binding) {
         const plan = await prepareSession(store, profile.id, undefined, request);
@@ -128,14 +141,28 @@ export async function connectLoom(options: AgentConnectionOptions) {
             blockers.push({ stage: 'native-preflight', diagnostic: diagnosticFor(new ContainerFailure('NativeIntegrationNotReady', 'Native preflight is unavailable.'), 'host', false) });
           } else {
             nativeReason = null; nativeAttempted = true;
-            try { await binding.nativePreflight(structuredClone(plan)); native = 'passed'; }
-            catch (error) { native = 'failed'; blockers.push({ stage: 'native-preflight', diagnostic: diagnosticFor(error, 'host', false) }); }
+            try {
+              nativeChecks = nativeReadinessReport(await binding.nativePreflight(structuredClone(plan)));
+              if (Object.values(nativeChecks).includes('failed')) throw new ContainerFailure('NativeIntegrationNotReady', 'Native preflight reported failure.');
+              native = 'passed';
+            } catch (error) {
+              native = 'failed';
+              const diagnostic = diagnosticFor(error, 'host', false);
+              const check = diagnostic.check;
+              if (check === 'sdk-version' || check === 'sdk-surface') nativeChecks.sdk = 'failed';
+              else if (check === 'adapter-registration' || check === 'plugin-entry' || check === 'prompt-directory') nativeChecks.bindings = 'failed';
+              else if (check === 'extension-loading') nativeChecks.resources = 'failed';
+              else if (check === 'launcher') nativeChecks.launcher = 'failed';
+              blockers.push({ stage: 'native-preflight', diagnostic });
+            }
           }
         }
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
         declaration: 'valid', inputs, blockers, host: { delivery: hostDelivery, bindings: hostBindings, bindings_unchecked_reason: bindingsReason },
         native_preflight: { status: native, unchecked_reason: nativeReason, coverage: native === 'passed' ? 'host-defined-resources' : 'none', effect_scope: nativeAttempted ? 'trusted-native-code-may-load' : 'none' },
+        readiness_checks: { declaration: 'passed', host_bindings: hostBindings, ...nativeChecks,
+          model_configuration: 'not-checked', credentials: 'not-checked', business_acceptance: 'not-checked' },
         unchecked: ['artifact-bytes', 'model-configuration', 'credentials', 'domain-initialization', 'business-acceptance', 'external-side-effects'],
         observation_only: true };
     },
@@ -167,6 +194,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
       } catch (error) {
         return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
           session_id: sessionId, execution: { status: 'unknown', domain_execution_started: started }, artifacts: [], aspect_failures: [],
+          participants: unobservedParticipants(profileFor(application, request.entry_id)),
           observation: { history: 'unreadable', recorded_session_status: null, outcome_confirmed: false },
           requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
           business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(error, 'governance-storage', started),
@@ -174,6 +202,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
         session_id: sessionId, execution: { status: sessionId ? 'unknown' : 'not-started', domain_execution_started: false }, artifacts: [], aspect_failures: [],
+        participants: unobservedParticipants(profileFor(application, request.entry_id)),
         observation: { history: 'readable', recorded_session_status: null, outcome_confirmed: sessionId === null },
         requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
         business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(failure, 'native', false),
@@ -181,6 +210,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
     },
     async inspect(filter: { entry_id?: string; session_id?: string; request_id?: string; artifact_id?: string } = {}) {
       if (filter.entry_id) profileFor(application, filter.entry_id);
+      if (filter.request_id !== undefined) identifier(filter.request_id);
       try {
         const snapshot = await inspectTask(store);
         const view = taskInspectionView(snapshot);
@@ -192,6 +222,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
         const relatedArtifacts = new Set(sessions.flatMap(s => [...s.produced.map(a => a.id),
           ...s.consumed.map(c => c.artifact_id), ...(s.resolved_inputs?.bindings.map(b => b.artifact_id) ?? [])]));
         return { schema_version: 1, task_id: store.task.id, history: 'readable',
+          ...(filter.request_id ? { operation: operationSummary(view.sessions, filter.request_id) } : {}),
           readiness: { host_delivery: hostDelivery, native_compatibility: 'not-checked', credentials: 'unknown', external_side_effects: 'unknown' },
           sessions: sessions.map(s => s.request ? receiptFromSession(s) : { session_id: s.id, profile_id: s.profile_id,
             request_id: null, identity_migration: 'not-inferred', ...projectSessionFacts(s) }),
@@ -207,6 +238,34 @@ export async function connectLoom(options: AgentConnectionOptions) {
       }
     },
   };
+  return { ...services, async invoke(value: AgentRequest): Promise<AgentReceipt> {
+    const request = requestCopy(value);
+    if (!exclusiveWriter) return services.invoke(request);
+    let receipt: AgentReceipt | undefined;
+    let historyRead = false;
+    try {
+      return await withTaskWriter(store, async () => {
+        const view = taskInspectionView(await inspectTask(store));
+        historyRead = true;
+        if (view.sessions.some(session => !projectSessionFacts(session).observation.outcome_confirmed))
+          throw new ContainerFailure('TaskOutcomeUnconfirmed', 'Reconcile unconfirmed Session outcomes before starting another writer.');
+        // Preparation, input resolution, initialization and receipt inspection all happen under ownership.
+        receipt = await services.invoke(request);
+        return receipt;
+      });
+    } catch (error) {
+      if (receipt) return { ...receipt, call_diagnostic: diagnosticFor(error, 'governance-storage') };
+      return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
+        session_id: null, execution: { status: 'not-started', domain_execution_started: false },
+        observation: { history: historyRead ? 'readable' : 'unreadable',
+          recorded_session_status: null, outcome_confirmed: true },
+        requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
+        artifacts: [], aspect_failures: [], business_acceptance: { status: 'not-evaluated' },
+        participants: unobservedParticipants(profileFor(application, request.entry_id)),
+        diagnostic: diagnosticFor(error, 'governance-storage', false),
+        inspection_ref: { task_id: store.task.id, session_id: null }, retry_safety: 'not-established' };
+    }
+  } };
 }
 
 /** IDs correlate attempts; repeating a request intentionally creates a new Session. */

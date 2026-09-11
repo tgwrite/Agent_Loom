@@ -3,6 +3,9 @@ import type { SessionProfile } from './session/index.ts';
 import type { JsonValue } from './json.ts';
 import { ContainerFailure } from './failure/index.ts';
 import { identifier, jsonValue, requireRecord } from './record-validation.ts';
+import { validateData } from './data-schema.ts';
+import type { DataSchema } from './data-schema.ts';
+export type { DataSchema } from './data-schema.ts';
 
 /** Profile metadata, never a second execution registry. */
 export interface EntryContract {
@@ -12,6 +15,11 @@ export interface EntryContract {
   tags?: readonly string[];
   implementation: 'native' | 'synthetic';
   request_mapping?: 'v1';
+  data_schema?: DataSchema;
+  data_required?: boolean;
+  data_examples?: readonly JsonValue[];
+  /** App-selected evidence references; Core does not interpret their business verdicts. */
+  acceptance_artifacts?: readonly { type: string; version: string; producer_plugin_id: string }[];
   effect_declarations: readonly string[];
   examples?: readonly { instruction: string; valid: boolean; explanation: string }[];
 }
@@ -36,10 +44,10 @@ const requestProperties = {
 /** JSON Schema describes JSON shape; runtime identity and domain checks remain explicit. */
 export function requestSchema(profile: SessionProfile) {
   return structuredClone({ type: 'object', additionalProperties: false,
-    required: ['schema_version', 'request_id', 'task_id', 'entry_id'],
+    required: ['schema_version', 'request_id', 'task_id', 'entry_id', ...(profile.entry?.data_required ? ['data'] : [])],
     properties: { ...requestProperties, entry_id: { const: profile.entry?.id ?? profile.id },
       instruction: profile.entry?.request_mapping === 'v1' ? requestProperties.instruction : false,
-      data: profile.entry?.request_mapping === 'v1' ? requestProperties.data : false,
+      data: profile.entry?.request_mapping === 'v1' ? profile.entry.data_schema ?? requestProperties.data : false,
       inputs: { type: 'object', additionalProperties: false,
         properties: Object.fromEntries(profile.requirements.filter(r => r.input_name).map(r => [r.input_name!, {
           ...requestProperties.inputs.additionalProperties,
@@ -71,11 +79,14 @@ export function validateRequest(value: unknown): asserts value is AgentRequest {
 
 /** Shared by preparation, execution revalidation and the Store startup gate. */
 export function invocationRequirements(profile: SessionProfile, taskId: string, request?: AgentRequest): readonly ArtifactRequirement[] {
+  if (profile.entry?.data_required && request?.data === undefined)
+    throw new ContainerFailure('InvalidArguments', 'Required request data is missing.', { path: 'data', rule: 'required' });
   if (!request) return profile.requirements;
   validateRequest(request);
   requireRecord(request.task_id === taskId && request.entry_id === (profile.entry?.id ?? profile.id), 'Request does not match this Task and entry.');
   if ((request.instruction !== undefined || request.data !== undefined) && profile.entry?.request_mapping !== 'v1')
     throw new ContainerFailure('InvalidArguments', 'Entry does not support invocation data mapping.');
+  if (profile.entry?.data_schema !== undefined && request.data !== undefined) validateData(profile.entry.data_schema, request.data);
   const inputs = request.inputs ?? {};
   requireRecord(Object.keys(inputs).every(name => profile.requirements.some(r => r.input_name === name)), 'Unknown named input.');
   return profile.requirements.map(requirement => {

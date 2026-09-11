@@ -4,17 +4,29 @@ import { readObserverFailure } from './failure/observer.ts';
 import { invocationRequirements } from './invocation.ts';
 import { requireRecord } from './record-validation.ts';
 
+function groupBy<T>(values: T[], key: (value: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const id = key(value);
+    const group = groups.get(id) ?? [];
+    group.push(value);
+    groups.set(id, group);
+  }
+  return groups;
+}
+
 /** The existing JSON snapshot contract, including original historical records. */
 export async function inspectTask(store: LocalTaskStore) {
   const task = store.task;
   const profiles = new Map(task.application.profiles.map(profile => [profile.id, profile]));
-  const artifacts = await store.listArtifacts();
-  const consumptions = await store.listConsumptions();
-  const sessions = await store.listSessions();
+  const { artifacts, consumptions, sessions, events } = await store.readInspectionRecords();
+  const producedBySession = groupBy(artifacts, artifact => artifact.producer.session_id);
+  const consumedBySession = groupBy(consumptions, consumption => consumption.session_id);
+  const consumedByArtifact = groupBy(consumptions, consumption => consumption.artifact_id);
   const byId = new Map(artifacts.map(artifact => [artifact.id, artifact]));
   return {
     task,
-    sessions: await Promise.all(sessions.map(async session => {
+    sessions: sessions.map(session => {
       if (session.resolved_inputs) {
         const profile = profiles.get(session.profile_id);
         requireRecord(profile !== undefined, 'Input binding Profile is unavailable.');
@@ -30,14 +42,15 @@ export async function inspectTask(store: LocalTaskStore) {
           'Recorded input binding does not match its Task facts.');
         }
       }
-      const produced = artifacts.filter(artifact => artifact.producer.session_id === session.id);
+      const produced = producedBySession.get(session.id) ?? [];
       return {
         ...session,
+        acceptance_artifact_contracts: profiles.get(session.profile_id)?.entry?.acceptance_artifacts ?? [],
         produced,
-        consumed: consumptions.filter(record => record.session_id === session.id).map(record => ({
+        consumed: (consumedBySession.get(session.id) ?? []).map(record => ({
           ...record, producer: byId.get(record.artifact_id)!.producer,
         })),
-        events: await store.listEvents(session.id),
+        events: events.get(session.id)!,
         plugin_artifact_counts: Object.fromEntries(session.plugin_ids.map(pluginId => {
           const counts = new Map<string, number>();
           for (const artifact of produced) if (artifact.producer.plugin_id === pluginId)
@@ -45,9 +58,9 @@ export async function inspectTask(store: LocalTaskStore) {
           return [pluginId, Object.fromEntries(counts)];
         })),
       };
-    })),
+    }),
     artifacts: artifacts.map((artifact) => ({ ...artifact,
-      consumers: consumptions.filter((record) => record.artifact_id === artifact.id) })),
+      consumers: consumedByArtifact.get(artifact.id) ?? [] })),
   };
 }
 

@@ -1,6 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { ContainerFailure, safeNativeFailure } from '../../container-core/src/index.ts';
+import { ContainerFailure, safeNativeFailure, hostReadinessFailure, safeHostReadinessFailure } from '../../container-core/src/index.ts';
 import type { ArtifactRef, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/index.ts';
 
 /** The small SDK surface exercised by the bridge; the SDK is supplied locally. */
@@ -82,7 +82,7 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
   const sdk = options.sdk as PiSdk | undefined;
   if (!sdk || typeof sdk.SettingsManager?.inMemory !== 'function'
     || typeof sdk.SessionManager?.create !== 'function' || typeof sdk.DefaultResourceLoader !== 'function'
-    || typeof sdk.createAgentSession !== 'function') throw unavailable();
+    || typeof sdk.createAgentSession !== 'function') throw hostReadinessFailure('sdk-surface');
   // Freeze caller-owned configuration while keeping the supplied SDK/service objects.
   const bindings = structuredClone(options.bindings);
   const settings = structuredClone(options.settings);
@@ -91,24 +91,26 @@ export function createPiSessionHost(options: PiSessionHostOptions): SessionHost 
   // Package/resource discovery is controlled by the selected Profile only.
   for (const key of ['packages', 'extensions', 'skills', 'prompts', 'themes']) delete settings[key];
   async function validate(plan: SessionPlan): Promise<void> {
-    if (options.sdkVersion !== options.expectedVersion || !isAbsolute(options.agentDir)
+    if (options.sdkVersion !== options.expectedVersion) throw hostReadinessFailure('sdk-version');
+    if (!isAbsolute(options.agentDir)
       || typeof options.initialize !== 'function' || typeof options.run !== 'function') throw unavailable();
     try {
       const entries = new Set<string>();
       for (const id of plan.plugin_ids) {
         const binding = bindings[id];
-        if (!binding || !isAbsolute(binding.entry) || !(await stat(binding.entry)).isFile()) throw unavailable();
+        if (!binding || !isAbsolute(binding.entry) || !(await stat(binding.entry)).isFile()) throw hostReadinessFailure('plugin-entry');
         entryOwners.set(pathKey(binding.entry), id);
         binding.entry = await realpath(binding.entry);
         const key = pathKey(binding.entry);
-        if (entries.has(key)) throw unavailable();
+        if (entries.has(key)) throw hostReadinessFailure('plugin-entry');
         entries.add(key);
         entryOwners.set(key, id);
         for (const prompt of binding.prompt_paths ?? []) {
-          if (!isAbsolute(prompt) || !(await stat(prompt)).isDirectory()) throw unavailable();
+          try { if (!isAbsolute(prompt) || !(await stat(prompt)).isDirectory()) throw hostReadinessFailure('prompt-directory'); }
+          catch (error) { throw safeHostReadinessFailure(error, 'prompt-directory'); }
         }
       }
-    } catch { throw unavailable(); }
+    } catch (error) { throw safeHostReadinessFailure(error, 'plugin-entry'); }
   }
   return {
     runtime: { id: 'pi', name: 'pi', version: options.sdkVersion },

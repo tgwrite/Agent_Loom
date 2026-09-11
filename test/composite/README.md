@@ -32,6 +32,14 @@ node test/composite/probe.mjs
 npm run test:composite
 ```
 
+Neither `test:composite` nor direct `run.mjs` builds the CLI automatically. Both
+check for its build output before starting fixture services and report
+`npm run build` when it is missing. `probe.mjs` checks native prerequisites;
+`run.mjs --smoke` runs one normal case; the default runner executes the full matrix.
+Command failures retain their stderr in local diagnostics. Provider and fixture
+cleanup runs even when Task creation or diagnostic persistence fails. Review
+request logs are saved in the experiment root, including when no Task was created.
+
 `node test/composite/run.mjs --smoke` runs only the normal forward-order Loom case.
 No global Pi installation is used or changed. The extra package is test-local;
 its older Pi peer dependencies are not installed because its only SDK reference
@@ -46,6 +54,9 @@ export, telemetry hooks, review command, Pi child processes, log read tool and
 Markdown file writes execute normally. A successful review uses three local model
 requests: request a log read, produce its review, synthesize improvements. There
 are no commercial model requests. This does not assess review or summary quality.
+The fixture includes Chinese text and non-ASCII punctuation. The Windows launcher
+uses explicit UTF-8 on both streams, and indexed native review files are checked
+for exact transport of that text. A passing digest alone is not an encoding check.
 
 ## Pass conditions
 

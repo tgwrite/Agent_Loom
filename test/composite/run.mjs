@@ -10,6 +10,7 @@ import { readJson } from '../lightweight/native-runtime.mjs';
 import { launcher, here } from './launcher.mjs';
 import { provider } from './provider.mjs';
 import { nativeFingerprints } from './fingerprints.mjs';
+import { requireBuild, withCleanup, failureText } from './lifecycle.mjs';
 
 // Driver invokes public CLI commands, injects faults and inspects evidence.
 // It never imports Core or writes a Loom registry, event or Session record.
@@ -17,6 +18,7 @@ const repo = fileURLToPath(new URL('../../', import.meta.url));
 const args = process.argv.slice(2);
 assert(args.length === 0 || args.length === 1 && args[0] === '--smoke');
 const smoke = args.length > 0;
+await requireBuild(repo);
 const globalDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi/agent');
 const fingerprints = async () => Object.fromEntries(await Promise.all(['settings.json', 'auth.json', 'models.json', 'telemetry.json'].map(async name => {
   const bytes = await readFile(join(globalDir, name)).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
@@ -57,6 +59,7 @@ async function command(arm, operation, task, profile, human = false) {
   const output = await new Promise((done, fail) => {
     const child = spawn(process.execPath, argv, { cwd: consoleRoot, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', bytes => { stdout += bytes; });
     child.stderr.on('data', bytes => { stderr += bytes; });
     const timer = setTimeout(() => child.kill(), 180000);
@@ -65,8 +68,9 @@ async function command(arm, operation, task, profile, human = false) {
   });
   const call = { arm, operation, task: task.id, profile, elapsed_ms: Math.round(performance.now() - start), ...output };
   calls.push(call);
-  await writeJson(join(root, `command-${calls.length}.local.json`), call);
-  assert.equal(output.code, 0, `Command ${calls.length} failed`);
+  await withCleanup(async () => {
+    assert.equal(output.code, 0, `Command ${calls.length} (${operation}) failed: ${output.stderr.trim() || output.stdout.trim() || 'No command diagnostic'}`);
+  }, [() => writeJson(join(root, `command-${calls.length}.local.json`), call)]);
   return human ? output.stdout : JSON.parse(output.stdout);
 }
 
@@ -75,7 +79,7 @@ async function scenario(arm, reversed, telemetryFault, retroFault) {
   const task = { id: `${arm}-${name}`, root: join(root, `${arm}-${name}`),
     app: join(here, reversed ? 'reversed.application.mjs' : 'application.mjs') };
   const review = await provider(retroFault);
-  try {
+  await withCleanup(async () => {
     await command(arm, 'create', task);
     await writeJson(join(task.root, 'web-input.local.json'), { mode: 'scripted', url: new URL('/' + task.id, fixture).href,
       observer_fault: telemetryFault, review_provider: review.baseUrl, launcher_env: launcherEnv });
@@ -101,6 +105,9 @@ async function scenario(arm, reversed, telemetryFault, retroFault) {
       if (artifact.type.startsWith('retro.')) {
         assert.equal(artifact.producer.plugin_id, 'conversation-review');
         assert.equal(artifact.consumers.length, 0);
+        const text = await readFile(join(task.root, artifact.payload_ref.path), 'utf8');
+        assert(text.includes('中文复盘 — 报告 → 正确 ✓'), 'Native review text was damaged in transit');
+        assert(!text.includes('\uFFFD'), 'Native review contains replacement characters');
       }
     }
     for (const session of snapshot.sessions) {
@@ -148,39 +155,45 @@ async function scenario(arm, reversed, telemetryFault, retroFault) {
     }
     results.push({ arm, scenario: name, task: task.id, passed: true, sessions: 2, artifacts: snapshot.artifacts.length,
       review_requests: review.requests.length, commercial_model_requests: 0 });
-  } finally { await writeJson(join(task.root, 'review-requests.local.json'), review.requests); await review.close(); }
+  }, [() => writeJson(join(root, `${task.id}-review-requests.local.json`), review.requests), () => review.close()]);
 }
 
 try {
-  for (const arm of smoke ? ['loom'] : ['loom', 'control']) {
-    for (const reversed of smoke ? [false] : [false, true]) {
-      for (const [telemetryFault, retroFault] of smoke ? [[false, false]] : [[false, false], [true, false], [false, true], [true, true]]) {
-        console.log(`${arm}: ${reversed ? 'reverse' : 'forward'}, telemetry=${+telemetryFault}, retro=${+retroFault}`);
-        await scenario(arm, reversed, telemetryFault, retroFault);
+  const result = await withCleanup(async () => {
+    for (const arm of smoke ? ['loom'] : ['loom', 'control']) {
+      for (const reversed of smoke ? [false] : [false, true]) {
+        for (const [telemetryFault, retroFault] of smoke ? [[false, false]] : [[false, false], [true, false], [false, true], [true, true]]) {
+          console.log(`${arm}: ${reversed ? 'reverse' : 'forward'}, telemetry=${+telemetryFault}, retro=${+retroFault}`);
+          await scenario(arm, reversed, telemetryFault, retroFault);
+        }
       }
     }
-  }
-  assert.deepEqual(await fingerprints(), before, 'Global Pi configuration changed');
-  assert.deepEqual(await codeHashes(), codeBefore, 'Existing adapters changed');
-  assert.deepEqual(await nativeFingerprints(), nativeBefore, 'Native package contents changed');
-  for (const file of ['control.mjs', 'setup.mjs', 'retro-adapter.mjs', 'instrumentation.mjs']) {
-    assert(!/from\s+['"][^'"]*packages\//.test(await readFile(join(here, file), 'utf8')), 'Control imports Loom implementation');
-  }
-  const oldControl = (await readFile(join(here, '../lightweight/control.mjs'), 'utf8')).trim().split('\n').length;
-  const newControl = (await readFile(join(here, 'control.mjs'), 'utf8')).trim().split('\n').length;
-  await writeJson(join(root, 'result.local.json'), { status: 'passed', results, global_pi_config_unchanged: true,
-    existing_adapters_unchanged: true, existing_adapter_hashes: codeBefore, native_packages_unchanged: true, native_packages: nativeBefore,
-    control_lines: { before: oldControl, after: newControl, delta: newControl - oldControl },
-    limitations: ['Deterministic model decisions; review quality untested', 'No compaction/checkpoint validation',
-      'No filesystem security sandbox', 'No performance advantage measured', 'Complete v0.1 acceptance pending'] });
+    assert.deepEqual(await fingerprints(), before, 'Global Pi configuration changed');
+    assert.deepEqual(await codeHashes(), codeBefore, 'Existing adapters changed');
+    assert.deepEqual(await nativeFingerprints(), nativeBefore, 'Native package contents changed');
+    for (const file of ['control.mjs', 'setup.mjs', 'retro-adapter.mjs', 'instrumentation.mjs']) {
+      assert(!/from\s+['"][^'"]*packages\//.test(await readFile(join(here, file), 'utf8')), 'Control imports Loom implementation');
+    }
+    const oldControl = (await readFile(join(here, '../lightweight/control.mjs'), 'utf8')).trim().split('\n').length;
+    const newControl = (await readFile(join(here, 'control.mjs'), 'utf8')).trim().split('\n').length;
+    return { status: 'passed', results, global_pi_config_unchanged: true,
+      existing_adapters_unchanged: true, existing_adapter_hashes: codeBefore, native_packages_unchanged: true, native_packages: nativeBefore,
+      control_lines: { before: oldControl, after: newControl, delta: newControl - oldControl },
+      limitations: ['Deterministic model decisions; review quality untested', 'No compaction/checkpoint validation',
+        'No filesystem security sandbox', 'No performance advantage measured', 'Complete v0.1 acceptance pending'] };
+  }, [
+    () => writeJson(join(root, 'commands.local.json'), calls),
+    async () => writeJson(join(root, 'global-config-check.local.json'), { unchanged: JSON.stringify(await fingerprints()) === JSON.stringify(before) }),
+    async () => { server.closeAllConnections(); await new Promise(done => server.close(done)); },
+  ]);
+  await writeJson(join(root, 'result.local.json'), result);
   console.log(JSON.stringify({ status: 'passed', scenarios: results.length, output: relative(repo, root) }));
 } catch (error) {
-  await writeFile(join(root, 'failure.local.txt'), String(error?.stack ?? error));
-  await writeJson(join(root, 'partial.local.json'), results);
-  console.error(`Composite experiment failed; inspect ${relative(repo, root)}`);
   process.exitCode = 1;
-} finally {
-  await writeJson(join(root, 'commands.local.json'), calls);
-  await writeJson(join(root, 'global-config-check.local.json'), { unchanged: JSON.stringify(await fingerprints()) === JSON.stringify(before) });
-  server.closeAllConnections(); await new Promise(done => server.close(done));
+  console.error(`Composite experiment failed: ${failureText(error)}\nInspect ${relative(repo, root)}`);
+  const saved = await Promise.allSettled([
+    writeFile(join(root, 'failure.local.txt'), failureText(error)),
+    writeJson(join(root, 'partial.local.json'), results),
+  ]);
+  if (saved.some(result => result.status === 'rejected')) console.error('Some local failure evidence could not be saved.');
 }

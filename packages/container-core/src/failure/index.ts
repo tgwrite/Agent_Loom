@@ -9,6 +9,9 @@ export type FailureCode =
   | 'NativeIntegrationNotReady'
   | 'NativeExecutionFailed'
   | 'InvalidArguments'
+  | 'TaskWriterBusy'
+  | 'TaskOutcomeUnconfirmed'
+  | 'TaskWriterReleaseFailed'
   | 'StorageFailure';
 
 export class ContainerFailure extends Error {

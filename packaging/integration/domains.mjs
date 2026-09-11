@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 export const domains = {
   measurement: {
     contract: { type: 'measurement.samples', version: '1' },
+    data_schema: { type: 'object', required: ['samples', 'unit'], additionalProperties: false,
+      properties: { samples: { type: 'array', minItems: 1, items: { type: 'number' } }, unit: { const: 'm' } } },
+    data_examples: [{ samples: [2, 3], unit: 'm' }],
     parse(value) {
       assert(value?.unit === 'm' && Array.isArray(value.samples) && value.samples.length > 0);
       assert(value.samples.every(Number.isFinite));
@@ -13,6 +16,10 @@ export const domains = {
   },
   catalog: {
     contract: { type: 'catalog.entries', version: '1' },
+    data_schema: { type: 'object', required: ['entries'], additionalProperties: false,
+      properties: { entries: { type: 'array', minItems: 1, items: { type: 'object', required: ['key'],
+        additionalProperties: false, properties: { key: { type: 'string', minLength: 1 } } } } } },
+    data_examples: [{ entries: [{ key: 'sample-item' }] }],
     parse(value) {
       assert(Array.isArray(value?.entries) && value.entries.length > 0);
       assert(value.entries.every(entry => typeof entry.key === 'string' && entry.key.trim()));
@@ -29,7 +36,8 @@ export function definition(id) {
     plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'pi', binding_key: 'domain' },
       capabilities: [], produces: [contract, { type: `${id}.result`, version: '1' }] }],
     profiles: [{ id: 'produce', primary: 'domain', aspects: [], workspace: 'producer', requirements: [],
-        entry: { id: `${id}.produce`, purpose: 'Accept a synthetic source snapshot', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] } },
+        entry: { id: `${id}.produce`, purpose: 'Accept a synthetic source snapshot', implementation: 'synthetic', request_mapping: 'v1',
+          data_schema: domains[id].data_schema, data_examples: domains[id].data_examples, effect_declarations: ['task-files-write'] } },
       { id: 'consume', primary: 'domain', aspects: [], workspace: 'consumer', requirements: [{ ...contract, verification_status: 'READY', input_name: 'source' }],
         entry: { id: `${id}.consume`, purpose: 'Derive a synthetic result from an accepted source', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] } }],
   };

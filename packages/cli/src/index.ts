@@ -1,6 +1,7 @@
 import { connectLoom, discoverEntries, describeEntry } from '../../container-core/src/agent.ts';
 import type { AgentRequest } from '../../container-core/src/invocation.ts';
 import { validateRequest } from '../../container-core/src/invocation.ts';
+import { hostReadinessFailure, safeHostReadinessFailure, nativeReadinessReport } from '../../container-core/src/index.ts';
 import { dirname, resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -16,7 +17,7 @@ const help = `Agent Loom (development preview)
 loom agent discover [--app <application.ts> | --task <id> --root <directory>] [--id <entry>] [--name <text>] [--tag <tag>] [--input-type <type>] [--output-type <type>] [--json]
 loom agent describe <entry> [--app <application.ts> | --task <id> --root <directory>] [--json]
 loom agent check --task <id> --request <json-file> [--root <directory>] [--host-module <file>] [--native-preflight] [--json]
-loom agent invoke --task <id> --request <json-file> [--root <directory>] [--host-module <file>] [--json]
+loom agent invoke --task <id> --request <json-file> [--root <directory>] [--host-module <file>] [--exclusive-writer] [--json]
 loom agent inspect --task <id> [--root <directory>] [--entry <entry>] [--session <id>] [--request-id <id>] [--artifact <id>] [--json]
 
 loom app validate <application.ts> [--definition-only | --host-module <file>] [--explain] [--json]
@@ -43,7 +44,7 @@ function argumentsFor(args: string[], allowed: readonly string[]) {
     const arg = args[i]!;
     if (!arg.startsWith('--')) { positionals.push(arg); continue; }
     if (!allowed.includes(arg) || flags.has(arg)) throw new ContainerFailure('InvalidArguments', 'Unknown or duplicate option.');
-    if (['--json', '--definition-only', '--dry-run', '--summary', '--explain', '--native-preflight'].includes(arg)) flags.set(arg, true);
+    if (['--json', '--definition-only', '--dry-run', '--summary', '--explain', '--native-preflight', '--exclusive-writer'].includes(arg)) flags.set(arg, true);
     else {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new ContainerFailure('InvalidArguments', 'Option requires a value.');
@@ -84,26 +85,32 @@ async function loadApplication(file: string): Promise<{ application: Application
 }
 
 async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHost> {
+  let module: Record<string, unknown>;
+  try { module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>; }
+  catch (error) { throw safeHostReadinessFailure(error, 'host-import'); }
   try {
-    const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
-    if (typeof module.createSessionHost !== 'function') throw new Error();
+    if (typeof module.createSessionHost !== 'function') throw hostReadinessFailure('host-contract');
     const host: SessionHost = await module.createSessionHost({ store });
     if (!host || typeof host.validate !== 'function' || typeof host.launch !== 'function'
       || !host.runtime || typeof host.runtime.id !== 'string' || typeof host.runtime.name !== 'string'
       || typeof host.runtime.version !== 'string') throw new Error();
     return host;
-  } catch {
-    throw new ContainerFailure('NativeIntegrationNotReady', 'Unable to load the local native Session Host.');
+  } catch (error) {
+    throw safeHostReadinessFailure(error, 'host-contract');
   }
 }
 
-async function validateNativeHost(file: string, application: ApplicationDefinition): Promise<void> {
+async function validateNativeHost(file: string, application: ApplicationDefinition) {
+  let module: Record<string, unknown>;
+  try { module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>; }
+  catch (error) { throw safeHostReadinessFailure(error, 'host-import'); }
   try {
-    const module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>;
-    if (typeof module.validateNativeApplication !== 'function') throw new Error();
-    await module.validateNativeApplication({ application: structuredClone(application) });
-  } catch {
-    throw new ContainerFailure('NativeIntegrationNotReady', 'Local native Application preflight failed.');
+    if (typeof module.validateNativeApplication !== 'function') throw hostReadinessFailure('host-contract');
+    const report = nativeReadinessReport(await module.validateNativeApplication({ application: structuredClone(application) }));
+    if (Object.values(report).includes('failed')) throw hostReadinessFailure('host-contract');
+    return report;
+  } catch (error) {
+    throw safeHostReadinessFailure(error, 'host-contract');
   }
 }
 
@@ -150,7 +157,7 @@ export async function main(args: string[]): Promise<number> {
       'agent discover': ['--app', '--task', '--root', '--id', '--name', '--tag', '--input-type', '--output-type', '--json'],
       'agent describe': ['--app', '--task', '--root', '--json'],
       'agent check': ['--task', '--root', '--request', '--host-module', '--native-preflight', '--json'],
-      'agent invoke': ['--task', '--root', '--request', '--host-module', '--json'],
+      'agent invoke': ['--task', '--root', '--request', '--host-module', '--exclusive-writer', '--json'],
       'agent inspect': ['--task', '--root', '--entry', '--session', '--request-id', '--artifact', '--json'],
       'app validate': ['--definition-only', '--host-module', '--explain', '--json'],
       'task create': ['--app', '--root', '--name', '--input', '--host-module', '--json'],
@@ -220,12 +227,13 @@ export async function main(args: string[]): Promise<number> {
       };
       phase = 'task-loading';
       const loom = await connectLoom({ taskRoot: store.taskRoot, taskId: store.task.id,
+        ...(options.flags.has('--exclusive-writer') ? { writer_policy: 'exclusive' as const } : {}),
         ...(selectedHost || invalidHost ? { host: { actor: { id: 'local-operator' }, delivery: invalidHost ? 'invalid' as const : 'declared' as const,
           createHost: async ({ store: active }) => {
             phase = 'host-loading'; const host = await loadHost(hostPath(), active);
             phase = 'session-execution'; return host;
           },
-          nativePreflight: async () => { phase = 'host-preflight'; await validateNativeHost(hostPath(), store.task.application); },
+          nativePreflight: async () => { phase = 'host-preflight'; return validateNativeHost(hostPath(), store.task.application); },
         } } : {}) });
       if (command === 'agent inspect') {
         phase = 'inspection';

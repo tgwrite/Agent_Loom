@@ -45,7 +45,7 @@ to inspect composition and `task inspect --summary` to see governance outcomes.
 Full inspection JSON and existing Host interfaces remain supported.
 
 
-The alpha.4 `agent-loom/agent` export provides Discover, Describe, Check, Invoke and
+The alpha.5 `agent-loom/agent` export provides Discover, Describe, Check, Invoke and
 Inspect over the existing governance Kernel. Run `loom --help` for commands and
 see `AGENT_GUIDE.md` for request mapping. Requests and receipts are versioned,
 named bindings are rechecked at execution, and Pi factories are selected per

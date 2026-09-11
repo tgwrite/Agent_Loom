@@ -19,6 +19,8 @@ class PiLauncher {
         return result.Append('"').ToString();
     }
     static int Main(string[] args) {
+        Console.OutputEncoding = new UTF8Encoding(false);
+        Console.InputEncoding = new UTF8Encoding(false);
         var argv = new StringBuilder(Quote(Environment.GetEnvironmentVariable("LOOM_TEST_PI_CLI")));
         foreach (string arg in args) argv.Append(" ").Append(Quote(arg));
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("LOOM_TEST_NODE"), argv.ToString());
@@ -26,6 +28,8 @@ class PiLauncher {
         start.CreateNoWindow = true;
         start.RedirectStandardOutput = true;
         start.RedirectStandardError = true;
+        start.StandardOutputEncoding = Encoding.UTF8;
+        start.StandardErrorEncoding = Encoding.UTF8;
         using (var child = Process.Start(start)) {
             var stdout = child.StandardOutput.ReadToEndAsync();
             var stderr = child.StandardError.ReadToEndAsync();

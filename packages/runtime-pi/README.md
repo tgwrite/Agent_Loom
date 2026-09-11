@@ -41,3 +41,14 @@ Primary adapters opting into `request_mapping: 'v1'` receive `context.request` a
 only when their registration explicitly opts in. Mapping is cooperative adapter
 behavior, not a same-process sandbox. Safe registered diagnostics are preserved
 through the native boundary; ordinary native error text remains hidden.
+
+Alpha.5 preflight returns separate SDK, binding, resource and launcher statuses.
+An optional `checkLauncher()` callback runs only during explicit native preflight;
+configuration, models and credentials remain unchecked. Failures retain reviewed
+stage codes and fixed next steps without native paths or raw diagnostics.
+
+The application host also records the Runtime-independent participant observation
+contract for domain completion and explicit aspect phases. Receipts can distinguish
+these phase reports from Session settlement and business-acceptance evidence.
+See the Agent guide for optional `writer_policy: 'exclusive'`: all mutating clients
+must cooperate, and direct Store or legacy Session calls do not acquire that lock.

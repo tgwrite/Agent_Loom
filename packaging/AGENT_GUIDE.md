@@ -45,6 +45,13 @@ Errors add `diagnostic` with a version, execution phase and suggested checks. Do
 parse prose as an error code. Native output may require application-owned routing;
 trusted imported modules can have side effects even during definition loading.
 
+Malformed Application fields retain `InvalidDefinition` and include
+`error.details.path` and `error.details.rule`, for example
+`profiles[0].entry.implementation` / `expected-native-or-synthetic`.
+The path identifies the declaration field without echoing its invalid value.
+An explicit `entry` requires `id`, `purpose`, `implementation` and
+`effect_declarations`; `request_mapping` alone is not a complete entry contract.
+
 ## One Host module for preflight and execution
 
 The Application exports `nativeHost = './host.mjs'`. That module can export the two
@@ -361,3 +368,135 @@ it loses trust; lookalike diagnostics fall back to a generic safe reason. Kernel
 lifecycle evidence overrides caller-supplied phase claims. This protocol does not
 authenticate cross-process errors. All retry and business-acceptance limitations
 above still apply.
+
+## Contract updates in alpha.5
+
+### Business parameters before native startup
+
+Entries may declare `data_schema`, `data_required` and `data_examples` alongside
+`request_mapping: 'v1'`. Describe embeds the Schema in `request_schema.properties.data`
+and returns the examples. Check, Invoke, plan revalidation and the Store startup
+gate share validation. A rejection reports `InvalidArguments` with `details.path`
+and `details.rule`, without the rejected value. Invalid requests reject the SDK
+promise; the CLI returns its structured error on stderr and exits 1.
+
+```js
+const entry = {
+  id: 'research.report', purpose: 'Create a report from selected sources',
+  implementation: 'native', request_mapping: 'v1',
+  effect_declarations: ['task-files-write'],
+  data_required: true,
+  data_schema: {
+    type: 'object', required: ['language'], additionalProperties: false,
+    properties: {
+      language: { enum: ['zh', 'en'] },
+      max_sections: { type: 'integer', minimum: 1, maximum: 12 }
+    }
+  },
+  data_examples: [{ language: 'zh', max_sections: 4 }]
+};
+```
+
+`loom-data-schema-v1` is a bounded JSON Schema subset. Supported keywords are
+`type` (one JSON type), `description`, `properties`, `required`, boolean
+`additionalProperties`, `items`, `minItems`, `maxItems`, `minLength`, `maxLength`,
+`minimum`, `maximum`, `enum` and `const`, plus boolean schemas. Properties use
+ASCII identifiers starting with a letter or underscore, up to 128 characters;
+remaining characters may also be digits or hyphens. Schema nesting is limited to
+32 and nodes to 1,024; enums contain 1–256 unique JSON values. String lengths count
+Unicode code points. Unsupported keywords, including references, formats, regexes
+and schema combinators, fail declaration validation. Examples must validate.
+No network resolution, coercion, default insertion or complete JSON Schema support
+is provided. Shape and bounds do not verify URLs, source truth or business policy.
+
+Without `data_required`, omitted data remains allowed even if a Schema is declared.
+Without a Schema, data remains application-owned. A required data contract also
+rejects request-free execution: use Invoke for that entry. Existing entries without
+these fields retain their behavior. Tasks keep their original Application snapshots;
+editing an Application module does not update an already-created Task.
+
+### Native readiness
+
+Native failures include a reviewed `diagnostic.check` and static `next_step` for
+Host import/exports, SDK version/surface, adapter registration, entry files,
+prompt directories, extension loading or launcher checks. Native error text is
+not forwarded. `readiness_checks` separates these observations from model,
+credential and business-acceptance checks, which remain `not-checked`.
+
+The Pi helper returns a `NativeReadinessReport` from `validateNativeApplication`.
+Return that report from an SDK binding's `nativePreflight` callback to preserve
+coverage. Legacy callbacks returning void still work; their individual checks stay
+`not-checked`. An optional `checkLauncher()` Pi Host option runs only during explicit
+native preflight. It must probe the local launcher without starting a model or domain
+operation. Absence of that callback leaves launcher readiness unchecked. Ordinary
+Check does not import the CLI Host, instantiate adapters or execute this probe.
+
+### Attempts and cooperative Task ownership
+
+`inspect({ request_id })` and CLI `agent inspect --request-id <id>` add an `operation`
+summary: attempt count, ordered outcomes, request consistency and confirmation
+status. This summary always covers the entire Task/request pair, even if Session
+or entry filters narrow displayed rows. It compares recorded request content
+without returning instruction/data values or their hashes. Object property order
+does not affect comparison. A changed value produces `conflicting-requests`; any
+unconfirmed attempt produces `unconfirmed`. No matching record means `not-recorded`,
+which cannot rule out an external effect before governance persistence.
+Repeated IDs still create new Sessions; the query does not establish safe retry.
+
+```js
+const loom = await connectLoom({ taskRoot, taskId, host, writer_policy: 'exclusive' });
+const receipt = await loom.invoke(request);
+const attempts = await loom.inspect({ request_id: request.request_id });
+```
+
+CLI invocation opts in with `--exclusive-writer`. Every mutating client must follow
+the same policy. Exclusive Invoke acquires `.agent-loom/writer.lock`, checks history
+under ownership, rejects unconfirmed outcomes, resolves inputs again and retains
+ownership through execution and receipt inspection. Competition fails immediately
+with `TASK_WRITER_BUSY`; this is not a scheduler. SDK callers implementing their own
+write boundary can use `withTaskWriter(store, async () => { ... })` and must perform
+their own state rechecks inside the callback. Do not nest it around exclusive Invoke.
+
+Only the acquiring owner's token may release the lock. An existing lock is never
+automatically expired or removed; after interruption, stop participating writers,
+inspect outcomes and reconcile external effects before explicitly removing the
+local lock. Lock removal alone does not reconcile an unknown Session. A release
+failure after a confirmed invocation preserves its receipt and adds
+`call_diagnostic`; it must not be interpreted as permission to repeat the operation.
+Direct Store writes, legacy Session entrypoints and clients without the option are
+not protected. This is a cooperative local filesystem protocol, not a distributed
+lock, hostile-process defense or automatic crash recovery.
+
+### Participants and acceptance evidence
+
+Receipts expose `participants.primary` and every declared aspect. Core reads generic
+Host phase observations, independent of Pi. Hosts may call
+`recordParticipantObservation(store, sessionId, { plugin_id, phase, status })` with
+phase `domain-run` or `aspect-after-run` and status `started`, `completed` or `failed`.
+The helper validates the Plugin role against the Session. The Pi application host
+emits these observations automatically. They are trusted Host reports, not a new
+business-quality authority. Generic Hosts and older Sessions may lack them.
+
+An aspect's `completed` requires an ordered start/completion pair and no recorded
+failure. `publication-observed` means an Artifact exists without phase completion
+evidence; `not-observed` is not success. The evidence scope refers to the explicit
+after-run phase, not every native hook. Session completion, domain completion and
+aspect status can differ. No transcript or Artifact body is added to the summary.
+
+An entry can opt into evidence references with
+`acceptance_artifacts: [{ type: 'audit.report', version: '1', producer_plugin_id: 'audit' }]`.
+Each contract must belong to a selected producer and its declared outputs.
+`business_acceptance.references` then identifies matching produced Artifacts;
+`status` stays `not-evaluated`. Applications inspect these references and decide
+whether their own acceptance policy passed. Missing references do not imply success.
+
+### History inspection
+
+Inspection builds a fresh in-memory index for each read, validates provenance and
+reuses the loaded Session records. It does not cache across requests or introduce a
+database. Queries still read the full governance history, then filter the projection;
+they do not rehash Artifact bodies or provide a transaction snapshot while another
+writer is changing files. Use cooperative ownership when a decision requires a
+stable read. `npm run benchmark:inspection` in a source checkout measures synthetic
+100/500-Session histories; timings are local observations, not Plugin performance
+or model-quality evidence.

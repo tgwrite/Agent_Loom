@@ -1,6 +1,6 @@
 {
   "name": "agent-loom",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "private": true,
   "description": "TypeScript CLI and SDK for AI agents to discover and invoke plugins, reuse artifacts across sessions, and inspect provenance. Pi runtime support. Alpha.",
   "keywords": ["ai-agents", "agent-tools", "agent-sdk", "agent-plugins", "artifact-provenance", "artifact-lineage", "session-management", "pi-agent", "typescript", "cli"],
@@ -52,6 +52,7 @@
     "check": "npm run typecheck && npm test && npm run privacy:check",
     "demo": "node examples/c2-analysis-application/demo.ts",
     "demo:agent": "node examples/agent-services-demo.mjs",
+    "benchmark:inspection": "npm run build && node scripts/benchmark-inspection.mjs",
     "package:local": "node scripts/package-local.mjs",
     "package:verify": "node scripts/verify-package.mjs"
   },

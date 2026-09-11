@@ -14,7 +14,7 @@ const domainFailure = registerSafeDiagnostics('domain', ['DOMAIN_POLICY_REJECTED
 const aspectFailure = registerSafeDiagnostics('aspect', ['AUDIT_REJECTED']);
 const contract = { type: 'sensor.sample', version: '1' };
 const requirement = { ...contract, verification_status: 'READY' };
-async function setup(t) {
+async function setup(t, hostOptions = {}) {
   const root = await mkdtemp(join(tmpdir(), 'loom-agent-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const state = { factories: [], initialized: 0, executed: 0, configured: 0, loaded: 0, prompts: [], mode: '', requests: [] };
@@ -89,7 +89,7 @@ async function setup(t) {
     });
   }
   const module = definePiApplicationModule({ id: 'sensor-app', version: '1', profiles, plugins, sdk, sdkVersion: 'synthetic',
-    preflightDirectory: root, configure() { state.configured++; return { settings: {}, modelRuntime: undefined }; } });
+    preflightDirectory: root, configure() { state.configured++; return { settings: {}, modelRuntime: undefined }; }, ...hostOptions });
   const store = await LocalTaskStore.create(join(root, 'task'), { schema_version: 2, id: 'sensor-task', application_id: module.application.id,
     application: module.application, title: 'Synthetic sensor Task', created_at: new Date().toISOString() });
   const host = { actor: { id: 'trusted-executor' },
@@ -144,6 +144,9 @@ test('empty and ambiguous inputs block without scheduling; names survive reorder
   assert.equal(direct.status, 'completed');
   const result = await f.loom.invoke(request);
   assert.equal(result.execution.status, 'completed'); assert.equal(result.business_acceptance.status, 'not-evaluated');
+  assert.equal(result.participants.primary.status, 'completed');
+  assert.equal(result.participants.aspects[0].status, 'completed');
+  assert.equal(result.participants.aspects[0].evidence_scope, 'after-run');
   assert.equal(result.execution.domain_execution_started, true);
   assert(!f.state.factories.includes('idle')); assert.equal(f.state.factories.filter(id => id === 'producer').length, 1);
   const report = await f.store.getArtifact(result.artifacts[0].id);
@@ -200,7 +203,11 @@ test('domain, native and aspect failures remain distinct and raw diagnostics nev
     if (mode === 'domain') { assert.equal(result.diagnostic.reason_code, 'DOMAIN_POLICY_REJECTED'); assert.equal(result.execution.domain_execution_started, false); }
     if (mode === 'domain-run') { assert.equal(result.diagnostic.reason_code, 'DOMAIN_POLICY_REJECTED'); assert.equal(result.execution.domain_execution_started, true); }
     if (mode === 'native') { assert.equal(result.diagnostic.reason_code, 'NATIVE_EXECUTION_FAILED'); assert.equal(result.execution.domain_execution_started, true); }
-    if (mode === 'aspect') assert.equal(result.aspect_failures[0].reason_code, 'AUDIT_REJECTED');
+    if (mode === 'aspect') {
+      assert.equal(result.aspect_failures[0].reason_code, 'AUDIT_REJECTED');
+      assert.equal(result.participants.primary.status, 'completed');
+      assert.equal(result.participants.aspects[0].status, 'failed');
+    }
     assert.equal(JSON.stringify(await f.loom.inspect()).includes('synthetic-private-error-canary'), false);
     const session = await f.store.getSession(result.session_id);
     assert.equal(JSON.stringify(session).includes('synthetic-private-error-canary'), false);
@@ -293,4 +300,36 @@ test('input helper verifies the declared name even when two contracts have the s
   await assert.rejects(readArtifactFile(context, plan.named_artifacts.left, { ...requirement, input_name: 'right' }, () => { verified = true; }),
     error => error.details.diagnostic.reason_code === 'SELECTED_REFERENCE_MISMATCH' && error.details.diagnostic.input_name === 'right');
   assert.equal(verified, false); assert.equal((await f.store.listConsumptions()).length, 0);
+});
+
+test('native readiness preserves safe stage hints without running adapters or a model', async t => {
+  let launcherCalls = 0;
+  const f = await setup(t, { async checkLauncher() { launcherCalls++; } });
+  const connection = await connectLoom({ taskRoot: f.store.taskRoot, taskId: f.store.task.id,
+    host: { ...f.host, nativePreflight: () => f.module.validateNativeApplication({ application: f.module.application }) } });
+  assert.equal((await connection.check(f.request())).readiness_checks.launcher, 'not-checked');
+  assert.equal(launcherCalls, 0);
+  const checked = await connection.check(f.request(), { native_preflight: true });
+  assert.equal(checked.readiness_checks.launcher, 'passed');
+  assert.equal(checked.readiness_checks.resources, 'passed');
+  assert.equal(checked.readiness_checks.model_configuration, 'not-checked');
+  assert.equal(launcherCalls, 1);
+  assert.equal(f.state.configured, 0); assert.deepEqual(f.state.factories, []);
+  const wrong = structuredClone(f.module.application); wrong.runtime.version = 'wrong';
+  await assert.rejects(f.module.validateNativeApplication({ application: wrong }), error => error.details.diagnostic.check === 'sdk-version');
+  const missing = structuredClone(f.module.application); missing.plugins[0].native.binding_key = 'missing';
+  await assert.rejects(f.module.validateNativeApplication({ application: missing }), error => error.details.diagnostic.check === 'adapter-registration');
+  const Loader = f.sdk.DefaultResourceLoader;
+  f.sdk.DefaultResourceLoader = class extends Loader { async reload() { throw new Error('private-loader-canary'); } };
+  const failed = await connection.check(f.request(), { native_preflight: true });
+  assert.equal(failed.blockers[0].diagnostic.check, 'extension-loading');
+  assert.match(failed.blockers[0].diagnostic.next_step, /extension/);
+  assert.doesNotMatch(JSON.stringify(failed), /private-loader-canary/);
+  f.sdk.DefaultResourceLoader = Loader;
+  await rm(join(f.root, 'producer.mjs'));
+  assert.equal((await connection.check(f.request(), { native_preflight: true })).blockers[0].diagnostic.check, 'plugin-entry');
+  const launcher = await setup(t, { async checkLauncher() { throw new Error('private-launcher-canary'); } });
+  await assert.rejects(launcher.module.validateNativeApplication({ application: launcher.module.application }), error => {
+    assert.equal(error.details.diagnostic.check, 'launcher'); assert.doesNotMatch(JSON.stringify(error), /private-launcher-canary/); return true;
+  });
 });

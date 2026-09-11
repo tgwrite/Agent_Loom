@@ -20,8 +20,8 @@ export async function provider(fault = false) {
       const read = body.messages.some(m => m.role === 'tool');
       const call = path && !read ? { index: 0, id: 'call_review_read', type: 'function',
         function: { name: 'read', arguments: JSON.stringify({ path: path.trim() }) } } : undefined;
-      const content = path ? '# Session Review\n\n## Summary\nRETRO_PRIVATE_CANARY: Native session log read successfully. Deterministic transport review; no quality claim.\n'
-        : '# Agent Improvement Report\n\n## Executive summary\nRETRO_PRIVATE_CANARY: Keep explicit input validation. Deterministic synthesis; no quality claim.\n';
+      const content = path ? '# Session Review\n\n## Summary\nRETRO_PRIVATE_CANARY: 中文复盘 — 报告 → 正确 ✓. Native session log read successfully. Deterministic transport review; no quality claim.\n'
+        : '# Agent Improvement Report\n\n## Executive summary\nRETRO_PRIVATE_CANARY: 中文复盘 — 报告 → 正确 ✓. Keep explicit input validation. Deterministic synthesis; no quality claim.\n';
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const frame = (delta, finish_reason) => 'data: ' + JSON.stringify({ id: 'local-review', object: 'chat.completion.chunk',
         created: 0, model: body.model, choices: [{ index: 0, delta, finish_reason }] }) + '\n\n';

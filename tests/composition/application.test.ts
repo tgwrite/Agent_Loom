@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { defineApplication, prepareSession, validateApplication } from '../../packages/container-core/src/index.ts';
+import { ContainerFailure, defineApplication, prepareSession, validateApplication } from '../../packages/container-core/src/index.ts';
 import { c2AnalysisApplication } from '../../examples/c2-analysis-application/application.ts';
 import { fixture, testApplication } from '../helpers.ts';
 
@@ -16,6 +16,37 @@ test('validation checks all Profiles and rejects malformed external definitions'
     { ...testApplication, profiles: [...testApplication.profiles, { id: 'bad', aspects: ['missing'], requirements: [] }] }]) {
     assert.throws(() => validateApplication(invalid), { code: 'InvalidDefinition' });
   }
+});
+
+test('definition diagnostics identify missing entry fields and nested contracts without echoing values', () => {
+  const validEntry = { id: 'sample.run', purpose: 'Synthetic operation', implementation: 'native',
+    request_mapping: 'v1', effect_declarations: [] };
+  const application = (entry: unknown) => ({ ...testApplication,
+    profiles: [{ ...testApplication.profiles[0], entry }] });
+  for (const [field, rule] of [['implementation', 'expected-native-or-synthetic'], ['effect_declarations', 'expected-array']]) {
+    const entry = { ...validEntry };
+    Reflect.deleteProperty(entry, field!);
+    assert.throws(() => validateApplication(application(entry)), error => {
+      assert(error instanceof ContainerFailure);
+      assert.equal(error.code, 'InvalidDefinition');
+      assert.deepEqual(error.details, { path: `profiles[0].entry.${field}`, rule });
+      return true;
+    });
+  }
+  const invalid = application({ ...validEntry, implementation: 'synthetic-diagnostic-canary' });
+  assert.throws(() => validateApplication(invalid), error => {
+    assert(error instanceof ContainerFailure);
+    assert.equal(error.details.path, 'profiles[0].entry.implementation');
+    assert(!JSON.stringify({ message: error.message, details: error.details }).includes('synthetic-diagnostic-canary'));
+    return true;
+  });
+  const nested = { ...testApplication, plugins: [{ ...testApplication.plugins[0], produces: [{ type: 'sample', version: null }] }] };
+  assert.throws(() => validateApplication(nested), error => {
+    assert(error instanceof ContainerFailure);
+    assert.deepEqual(error.details, { path: 'plugins[0].produces[0].version', rule: 'expected-nonempty-string' });
+    return true;
+  });
+  assert.doesNotThrow(() => validateApplication(application(validEntry)));
 });
 
 test('Task keeps its own definition snapshot and Workspace resolution is explicit', async (t) => {
