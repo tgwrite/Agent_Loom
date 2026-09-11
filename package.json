@@ -54,7 +54,8 @@
     "demo:agent": "node examples/agent-services-demo.mjs",
     "benchmark:inspection": "npm run build && node scripts/benchmark-inspection.mjs",
     "package:local": "node scripts/package-local.mjs",
-    "package:verify": "node scripts/verify-package.mjs"
+    "package:verify": "node scripts/verify-package.mjs",
+    "manual:verify": "node scripts/verify-manual.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

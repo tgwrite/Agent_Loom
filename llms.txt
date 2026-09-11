@@ -4,33 +4,34 @@
 > reuse artifact references across sessions, and inspect provenance and failures.
 
 Canonical repository: https://github.com/tgwrite/Agent_Loom
-Status: alpha.6 development preview; no npm registry release.
+Current package: 0.1.0-alpha.6 development preview; no npm registry release.
 Runtime integration: Pi. Core remains independent of Pi.
-Requirements: Node.js >=24.12.0, npm, ESM. License: Apache-2.0.
+Requirements: Node.js >=24.12.0, npm, ESM. Native dependencies may require more.
 
-This file is a short source-repository reading map. Links are relative to the
-repository root. It is not an executable agent policy or a GitHub indexing API.
+## User manual: follow this path
 
-## Evaluate
+- [Manual index](manual/README.md): 使用手册入口、阅读顺序与验证范围。
+- [Install](manual/INSTALL.md): Download, verify and install the archive locally.
+- [Getting started](manual/START_HERE.md): Choose caller/developer/adapter work; run a complete synthetic lifecycle.
+- [Call an application](manual/AGENT_API.md): CLI/SDK sequence, request fields, Host binding and artifact selection.
+- [Native integration tutorial](manual/NATIVE_INTEGRATION.md): Every file for a real Pi application; default-model setup, native tool execution and output validation.
+- [Application and adapter API](manual/ADAPTER_API.md): Descriptors, bindings, hook arguments/returns, artifact inputs and plugin-specific prerequisites.
+- [Troubleshooting](manual/TROUBLESHOOTING.md): Diagnose by layer; inspect execution, consumption, aspects and unknown outcomes.
+- [Advanced contracts](manual/AGENT_GUIDE.md): Schemas, receipts, cooperative locks and version compatibility.
 
-- [README](README.md): Fit, five Agent services, quick start and verified boundaries.
-- [Chinese introduction](README.zh-CN.md): 中文用途、示例与可引用介绍。
-- [Runnable Agent demo](examples/agent-services-demo.mjs): Synthetic Discover/Describe/Check/Invoke/Inspect; run after npm ci and npm run build with npm run demo:agent.
+Application users should not need to read framework or test implementation source.
+Use the selected native plugin's own documented API for its business protocol;
+Loom does not infer undocumented native entries or provide adapters for every package.
 
-## Integrate
+## Project and contributors
 
-- [Agent guide](packaging/AGENT_GUIDE.md): Request schemas, named bindings, explicit Host setup and safe receipts.
-- [Download alpha](https://github.com/tgwrite/Agent_Loom/releases): Precompiled CLI/SDK archive, SHA256SUMS and installation instructions.
-- [Installation](packaging/INSTALL.md): Install a downloaded or locally built archive; no npm registry release.
-- [Pi integration](packages/runtime-pi/README.md): Selected adapters and native Session boundaries.
-
-## Verify
-
-- [Agent regression](test/agent-services/README.md): Synthetic guarantees and mutation checks.
+- [Overview](README.md): Scope and project identity.
+- [Chinese overview](README.zh-CN.md): 中文简介。
+- [Downloads](https://github.com/tgwrite/Agent_Loom/releases): Precompiled archive, checksums and installation instructions.
+- [Contributing](CONTRIBUTING.md): Source checkout and development checks.
 - [Contributor rules](AGENTS.md): Development, privacy and publication instructions.
 - [License](LICENSE): Apache License 2.0.
 
 Loom does not schedule missing producers. Consumption follows successful domain
 initialization. Completed execution is not business acceptance. Unknown outcomes
-do not establish safe retry. Native compatibility and independent Agent experience
-need separate acceptance evidence; synthetic examples do not establish them.
+do not establish safe retry. Synthetic examples do not establish native compatibility.

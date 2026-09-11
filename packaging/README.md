@@ -15,6 +15,10 @@ This precompiled package provides the `loom` CLI, Core SDK and Pi Runtime bridge
 It requires Node.js >=24.12.0 and npm. Source checkout, TypeScript compilation and
 development dependencies are not required to use the package.
 
+Start with the [user manual](manual/README.md), included in this package and maintained
+with the public repository. It separates getting started, native integration,
+adapter APIs, troubleshooting and advanced contracts.
+
 See [INSTALL.md](INSTALL.md) for installation, SDK imports and a synthetic
 producer/consumer example. The package does not install Pi or business plugins,
 configure model credentials, or include a ready-to-run real webpage application.

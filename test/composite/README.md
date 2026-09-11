@@ -1,5 +1,9 @@
 # Four-Plugin governance experiment
 
+This is a contributor experiment, not a reusable adapter distribution or an
+application onboarding guide. For general application development without reading
+test implementations, use the [user manual](../../manual/README.md).
+
 This optional experiment adds a native conversation review aspect to the existing
 web task. The question is whether Loom absorbs composition, provenance and failure
 bookkeeping while existing domain and telemetry adapters stay unchanged.

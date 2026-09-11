@@ -23,3 +23,20 @@ Public CI must run from a clean clone with only public dependencies.
 
 Describe the problem, resulting behavior, tests, and outstanding acceptance limits
 in each contribution. Do not claim real compatibility based on mocks or fixtures.
+
+## User documentation
+
+Keep README focused on the project overview and links. User instructions live in
+`manual/`; `packaging/INSTALL.md` and `packaging/AGENT_GUIDE.md` retain compatibility
+links. The package builder includes the same manual files, and package verification
+compares the installed chapters with their public source.
+
+For manual changes, build a local archive with `npm run package:local`, then run
+`npm run manual:verify -- <archive.tgz>`. This extracts the tutorial's named code
+blocks into an independent application directory, validates them against the
+installed public package, and runs the documented synthetic lifecycle.
+
+Add `--native` to install the tutorial's pinned public Pi dependencies and run its
+actual extension/Host/model-runtime integration against a local deterministic model
+endpoint. This optional check makes no commercial model requests and does not prove
+real model quality or compatibility with other native plugins. Evidence stays local.

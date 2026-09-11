@@ -1,5 +1,10 @@
 # Pi Runtime boundary
 
+Application users: start with the [user manual](../../manual/README.md),
+[complete native tutorial](../../manual/NATIVE_INTEGRATION.md) and
+[adapter API reference](../../manual/ADAPTER_API.md). This page describes the
+implementation boundary, not the application installation sequence.
+
 The host accepts an explicitly supplied Pi SDK and native entry bindings. It loads
 only the selected Profile's plugins, initializes domain inputs before native
 discovery, and closes Pi before Core settles the Session. The current native tests

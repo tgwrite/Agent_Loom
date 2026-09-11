@@ -37,15 +37,26 @@ async function includeTree(root, prefix) {
 for (const component of ['container-core', 'runtime-pi', 'cli'])
   await includeTree(join(compiled, 'packages', component, 'src'), `dist/packages/${component}/src`);
 for (const [source, destination] of [
-  ['bin/loom.mjs', 'bin/loom.mjs'], ['packaging/README.md', 'README.md'], ['packaging/INSTALL.md', 'INSTALL.md'],
+  ['bin/loom.mjs', 'bin/loom.mjs'], ['packaging/README.md', 'README.md'],
   ['packaging/example.mjs', 'examples/minimal/example.mjs'], ['LICENSE', 'LICENSE'], ['NOTICE', 'NOTICE'],
-  ['packaging/AGENT_GUIDE.md', 'AGENT_GUIDE.md'],
 ]) await include(join(repo, source), destination);
+for (const name of ['README.md', 'INSTALL.md', 'START_HERE.md', 'NATIVE_INTEGRATION.md',
+  'ADAPTER_API.md', 'AGENT_API.md', 'TROUBLESHOOTING.md', 'AGENT_GUIDE.md'])
+  await include(join(repo, 'manual', name), `manual/${name}`);
+// Compatibility entrypoints retain their old names; the manual is the content source.
+for (const [source, name, rewrite] of [
+  ['manual/INSTALL.md', 'INSTALL.md', text => text.replaceAll('(START_HERE.md)', '(manual/START_HERE.md)')],
+  ['packaging/AGENT_GUIDE.md', 'AGENT_GUIDE.md', text => text.replaceAll('(../manual/', '(manual/')],
+]) {
+  const path = join(scratch, name);
+  await writeFile(path, rewrite(await readFile(join(repo, source), 'utf8')));
+  await include(path, name);
+}
 for (const name of ['domains.mjs', 'measurement.mjs', 'catalog.mjs', 'measurement.json', 'catalog.json', 'host.mjs', 'synthetic-sdk.mjs'])
   await include(join(repo, 'packaging/integration', name), `examples/integration/${name}`);
 const manifest = Object.fromEntries(['name', 'version', 'description', 'keywords', 'homepage', 'repository', 'license', 'type', 'engines', 'bin', 'exports'].map(key => [key, metadata[key]]));
 manifest.private = true;
-manifest.files = ['bin/', 'dist/', 'examples/', 'README.md', 'INSTALL.md', 'AGENT_GUIDE.md', 'LICENSE', 'NOTICE'];
+manifest.files = ['bin/', 'dist/', 'examples/', 'manual/', 'README.md', 'INSTALL.md', 'AGENT_GUIDE.md', 'LICENSE', 'NOTICE'];
 const manifestPath = join(scratch, 'manifest.json');
 await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 await include(manifestPath, 'package.json');

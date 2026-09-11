@@ -46,6 +46,11 @@ try {
   assert(run(process.execPath, [cli, '--help'], unrelated).includes('loom task inspect'));
   const guide = await readFile(join(installed, 'AGENT_GUIDE.md'), 'utf8');
   assert(guide.includes('readArtifactFile') && guide.includes('business_acceptance'));
+  for (const name of ['README.md', 'INSTALL.md', 'START_HERE.md', 'NATIVE_INTEGRATION.md',
+    'ADAPTER_API.md', 'AGENT_API.md', 'TROUBLESHOOTING.md', 'AGENT_GUIDE.md']) {
+    assert.deepEqual(await readFile(join(installed, 'manual', name)), await readFile(join(repo, 'manual', name)),
+      `Installed manual differs from its public source: ${name}`);
+  }
   for (const domain of ['measurement', 'catalog']) {
     const app = join(installed, 'examples/integration', `${domain}.mjs`);
     const input = join(installed, 'examples/integration', `${domain}.json`);

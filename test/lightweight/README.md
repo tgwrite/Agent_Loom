@@ -1,5 +1,9 @@
 # Lightweight native Plugin acceptance
 
+This page is for running a contributor experiment. Its internal adapters are not
+installed public application dependencies. Application developers should start
+with the [user manual](../../manual/README.md).
+
 For the formal CLI path and a no-Loom control, see the
 [governance value experiment](GOVERNANCE.md). This older command remains a focused
 integration regression using the same reusable Host and domain adapters.
