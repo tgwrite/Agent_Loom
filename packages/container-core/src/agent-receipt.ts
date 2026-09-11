@@ -32,9 +32,19 @@ export function requestedInputs(request: AgentRequest): AgentReceipt['requested_
   return Object.entries(request.inputs ?? {}).map(([input_name, ref]) => ({ input_name, artifact_id: ref.artifact_id }));
 }
 
-/** A pure projection shared by immediate and cold observations of the same snapshot. */
+/** Invocation identity is added only when it was actually recorded. */
 export function receiptFromSession(session: TaskInspection['sessions'][number]): AgentReceipt {
   if (!session.request) throw new ContainerFailure('InvalidRecord', 'Session has no invocation request.');
+  return { schema_version: 1, request_id: session.request.request_id, task_id: session.task_id,
+    entry_id: session.request.entry_id, session_id: session.id,
+    requested_inputs: requestedInputs(session.request), ...projectSessionFacts(session) };
+}
+
+type SessionFacts = Pick<AgentReceipt, 'execution' | 'observation' | 'resolved_inputs' | 'consumed'
+  | 'artifacts' | 'aspect_failures' | 'business_acceptance' | 'diagnostic' | 'inspection_ref' | 'retry_safety'>;
+
+/** Both supported entrypoints interpret governance evidence without inventing request identity. */
+export function projectSessionFacts(session: TaskInspection['sessions'][number]): SessionFacts {
   const storedDiagnostic = readSafeDiagnostic(session.failure?.diagnostic);
   const terminalEvents = session.events.filter(e => e.type === 'session.completed' || e.type === 'session.failed');
   const terminal = terminalEvents[0];
@@ -48,11 +58,8 @@ export function receiptFromSession(session: TaskInspection['sessions'][number]):
   const diagnostic: SafeDiagnostic | undefined = confirmed ? storedDiagnostic : {
     diagnostic_version: 1, boundary: 'governance-storage', reason_code: 'OUTCOME_UNCONFIRMED', retry_safety: 'not-established',
     ...(typeof started === 'boolean' ? { domain_execution_started: started } : {}) };
-  return { schema_version: 1, request_id: session.request.request_id, task_id: session.task_id,
-    entry_id: session.request.entry_id, session_id: session.id,
-    execution: { status: confirmed ? session.status : 'unknown', domain_execution_started: started },
+  return { execution: { status: confirmed ? session.status : 'unknown', domain_execution_started: started },
     observation: { history: 'readable', recorded_session_status: session.status, outcome_confirmed: confirmed },
-    requested_inputs: requestedInputs(session.request),
     resolved_inputs: { status: session.resolved_inputs ? 'recorded' : 'unavailable', bindings: structuredClone(session.resolved_inputs?.bindings ?? []) },
     consumed: consumedInputs(session),
     artifacts: session.produced.map(a => ({ id: a.id, type: a.type, version: a.version, producer_plugin_id: a.producer.plugin_id })),

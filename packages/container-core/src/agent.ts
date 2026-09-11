@@ -5,7 +5,7 @@ import { ContainerFailure } from './failure/index.ts';
 import { diagnosticFor } from './failure/diagnostic.ts';
 import type { SafeDiagnostic } from './failure/diagnostic.ts';
 import { inspectTask, taskInspectionView } from './inspection.ts';
-import { consumedInputs, receiptFromSession, requestedInputs } from './agent-receipt.ts';
+import { projectSessionFacts, receiptFromSession, requestedInputs } from './agent-receipt.ts';
 import type { AgentReceipt } from './agent-receipt.ts';
 export type { AgentReceipt } from './agent-receipt.ts';
 import { executeSession, prepareSession } from './governance.ts';
@@ -194,9 +194,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
         return { schema_version: 1, task_id: store.task.id, history: 'readable',
           readiness: { host_delivery: hostDelivery, native_compatibility: 'not-checked', credentials: 'unknown', external_side_effects: 'unknown' },
           sessions: sessions.map(s => s.request ? receiptFromSession(s) : { session_id: s.id, profile_id: s.profile_id,
-            execution: { status: s.status }, request_id: null, identity_migration: 'not-inferred',
-            resolved_inputs: { status: s.resolved_inputs ? 'recorded' : 'unavailable', bindings: structuredClone(s.resolved_inputs?.bindings ?? []) },
-            consumed: consumedInputs(s) }),
+            request_id: null, identity_migration: 'not-inferred', ...projectSessionFacts(s) }),
           artifacts: snapshot.artifacts.filter(a => (!filter.artifact_id || a.id === filter.artifact_id)
             && ((!filter.session_id && !filter.entry_id && !filter.request_id) || relatedArtifacts.has(a.id)))
             .map(a => ({ id: a.id, type: a.type, version: a.version, producer: a.producer, sha256: a.sha256, verification: a.verification,

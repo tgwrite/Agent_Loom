@@ -319,6 +319,14 @@ records and events are required for Agent receipts. `call_diagnostic`, when pres
 describes an immediate observation that could not be persisted; it does not
 override the shared outcome. Legacy queries retain their historical identity.
 
+Sessions created by `session start` or request-free SDK calls use the same outcome
+confirmation, safe domain/aspect diagnostics, output and consumption projection.
+Their `request_id` remains null and `identity_migration` remains `not-inferred`;
+inspection does not create requests or rewrite history. Missing execution-start
+evidence stays unknown, and missing or conflicting terminal evidence cannot confirm
+success. Inconsistent persisted bindings report `GOVERNANCE_RECORD_INVALID` at
+the governance-storage boundary; caller request rejection remains `REQUEST_REJECTED`.
+
 `requested_inputs` contains explicit caller selections. `resolved_inputs` records
 the actual binding before initialization, including implicit selections; its
 status is `unavailable` for older records without this evidence. `consumed` contains

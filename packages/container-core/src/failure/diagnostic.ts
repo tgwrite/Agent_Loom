@@ -81,6 +81,7 @@ export function diagnosticFor(error: unknown, boundary: DiagnosticBoundary, star
   const registered = typeof error === 'object' && error !== null ? trusted.get(error) : undefined;
   const code = error instanceof ContainerFailure ? error.code : undefined;
   const reason = code === 'StorageFailure' ? 'GOVERNANCE_STORAGE_FAILED'
+    : boundary === 'governance-storage' && code === 'InvalidRecord' ? 'GOVERNANCE_RECORD_INVALID'
     : code === 'PreconditionNotSatisfied' ? 'MISSING_DEPENDENCY'
     : code === 'BindingConflict' ? 'AMBIGUOUS_BINDING'
     : code === 'NativeIntegrationNotReady' ? 'HOST_UNAVAILABLE'

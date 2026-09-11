@@ -204,7 +204,19 @@ test('startup rejects forged binding snapshots and cold queries detect changed d
   assert.equal((await f.store.listSessions()).length, 2);
   const file = join(f.root, '.agent-loom', 'sessions', record.id, 'session.json');
   await writeFile(file, JSON.stringify({ ...record, resolved_inputs: forged.resolved_inputs }));
-  assert.equal((await (await f.cold()).inspect()).history, 'unreadable');
+  const invalid = await (await f.cold()).inspect();
+  assert.equal(invalid.history, 'unreadable');
+  assert.equal(invalid.diagnostic.boundary, 'governance-storage');
+  assert.equal(invalid.diagnostic.reason_code, 'GOVERNANCE_RECORD_INVALID');
+  assert.equal(JSON.stringify(invalid).includes('b'.repeat(64)), false);
+  const rejected = await f.loom.invoke(f.request());
+  assert.equal(rejected.execution.status, 'unknown');
+  assert.equal(rejected.diagnostic.reason_code, 'GOVERNANCE_RECORD_INVALID');
+  await assert.rejects(f.loom.invoke({ ...f.request(), task_id: 'another-task' }), error => {
+    assert.equal(error.code, 'InvalidRecord');
+    assert.equal(core.diagnosticFor(error, 'request').reason_code, 'REQUEST_REJECTED');
+    return true;
+  });
 });
 
 test('old Sessions retain consumption facts without inventing historical input names', async t => {
