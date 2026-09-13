@@ -35,11 +35,11 @@ export async function execute(store, plan, options) {
   async function publish(plugin, publications) {
     const batch = await Promise.all(publications.map(async p => {
       requireValue(plugin.produces?.some(c => c.type === p.type && c.version === p.version));
-      requireValue(typeof p.verification_status === 'string' && p.verification_status.trim());
+      requireValue(typeof p.assertion_status === 'string' && p.assertion_status.trim());
       return { id: randomUUID(), task_id: s.task_id, type: p.type, version: p.version,
-        producer: { plugin_id: plugin.id, capability_id: 'native-publication', session_id: id },
+        producer: { plugin_id: plugin.id, session_id: id },
         producer_phase: plugin.id === s.primary_plugin_id ? 'domain-run' : 'aspect-after-run', native_runtime_session_id: s.runtime_session_id,
-        executor: { actor_id: s.actor.id, runtime_id: s.runtime.id }, verification: { status: p.verification_status },
+        executor: { actor_id: s.actor.id, runtime_id: s.runtime.id }, assertion: { status: p.assertion_status },
         payload_ref: { kind: 'file', path: p.path }, sha256: sha256(await readFile(await containedFile(store.taskRoot, p.path))), created_at: new Date().toISOString() };
     }));
     for (const a of batch) await enqueue(async () => {

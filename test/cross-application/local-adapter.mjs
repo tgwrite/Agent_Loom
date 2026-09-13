@@ -22,7 +22,7 @@ export function localAdapter(config) {
       assert.deepEqual(results[0].details.value, { name: 'sample', value: 7 });
       const output = join(context.workspace, context.session_id, 'local-result.json');
       await writeFile(output, JSON.stringify(results[0].details.value) + '\n', { flag: 'wx' });
-      return [{ type: 'local.result', version: '1', verification_status: 'COMPLETED',
+      return [{ type: 'local.result', version: '1', assertion_status: 'COMPLETED',
         path: relative(context.task_root, output).replaceAll('\\', '/') }];
     },
   };

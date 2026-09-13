@@ -4,20 +4,25 @@ import { mkdtemp, rm, readFile, writeFile, appendFile, open } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { LocalTaskStore, ContainerFailure, withTaskWriter } from '../../dist/packages/container-core/src/index.js';
+import { LocalTaskStore, ContainerFailure, withTaskWriter } from '../../dist/packages/container-core/src/internal.js';
 import { connectLoom, createRequest } from '../../dist/packages/container-core/src/agent.js';
 
 async function fixture(t, mode = 'completed') {
   const root = await mkdtemp(join(tmpdir(), 'loom-writer-recovery-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const application = { id: 'synthetic', version: '1', runtime: { id: 'synthetic', version: '1' },
-    plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'synthetic', binding_key: 'domain' }, capabilities: [], produces: [] }],
+    plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'synthetic', binding_key: 'domain' }, produces: [] }],
     profiles: [{ id: 'run', primary: 'domain', aspects: [], requirements: [], entry: {
-      id: 'sample.run', purpose: 'Synthetic startup test', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: [] } }] };
-  const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'task', application_id: application.id,
+      id: 'sample.run', request_mapping: 'v1', }, presentation: { purpose: 'Synthetic startup test', implementation: 'synthetic' } }] };
+  const store = await LocalTaskStore.create(root, { schema_version: 3, id: 'task', application_id: application.id,
     application, title: 'Synthetic Task', created_at: new Date().toISOString() });
+  // Inject storage failures through the internal fixture, outside the public Host facade.
+  const originalOpen = LocalTaskStore.open.bind(LocalTaskStore);
+  t.mock.method(LocalTaskStore, 'open', async path => path === store.taskRoot ? store : originalOpen(path));
+
   const state = { factories: 0, launches: 0, runs: 0 };
-  const host = { actor: { id: 'actor' }, async createHost({ store: active }) {
+  const host = { actor: { id: 'actor' }, async createHost() {
+    const active = store;
     state.factories++;
     await appendFile(join(root, 'startup-effects.txt'), 'startup\n');
     if (mode === 'factory') throw new Error('Synthetic factory failure');

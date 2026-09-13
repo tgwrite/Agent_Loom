@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { EventEnvelope } from '../../packages/container-core/src/index.ts';
+import type { EventEnvelope } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, session, timestamp } from '../helpers.ts';
 
 test('Events preserve Task and Session provenance and remain independent of payload files', async (t) => {

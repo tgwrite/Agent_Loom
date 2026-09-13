@@ -34,11 +34,11 @@ export function definition(id) {
   const contract = domains[id].contract;
   return { id, version: '1', runtime: { id: 'pi', version: 'synthetic' },
     plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'pi', binding_key: 'domain' },
-      capabilities: [], produces: [contract, { type: `${id}.result`, version: '1' }] }],
+       produces: [contract, { type: `${id}.result`, version: '1' }] }],
     profiles: [{ id: 'produce', primary: 'domain', aspects: [], workspace: 'producer', requirements: [],
-        entry: { id: `${id}.produce`, purpose: 'Accept a synthetic source snapshot', implementation: 'synthetic', request_mapping: 'v1',
-          data_schema: domains[id].data_schema, data_examples: domains[id].data_examples, effect_declarations: ['task-files-write'] } },
-      { id: 'consume', primary: 'domain', aspects: [], workspace: 'consumer', requirements: [{ ...contract, verification_status: 'READY', input_name: 'source' }],
-        entry: { id: `${id}.consume`, purpose: 'Derive a synthetic result from an accepted source', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] } }],
+        entry: { id: `${id}.produce`, request_mapping: 'v1',
+          data_schema: domains[id].data_schema, }, presentation: { purpose: 'Accept a synthetic source snapshot', implementation: 'synthetic', data_examples: domains[id].data_examples } },
+      { id: 'consume', primary: 'domain', aspects: [], workspace: 'consumer', requirements: [{ ...contract, assertion_status: 'READY', input_name: 'source' }],
+        entry: { id: `${id}.consume`, request_mapping: 'v1', }, presentation: { purpose: 'Derive a synthetic result from an accepted source', implementation: 'synthetic' } }],
   };
 }

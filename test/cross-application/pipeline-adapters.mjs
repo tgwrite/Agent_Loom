@@ -6,7 +6,7 @@ import { containedFile, sha256 } from '../lightweight/handoff.mjs';
 import { runTools } from './decisions.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const fact = (context, output, type) => [{ type, version: '1', verification_status: 'COMPLETED',
+const fact = (context, output, type) => [{ type, version: '1', assertion_status: 'COMPLETED',
   path: relative(context.task_root, output).replaceAll('\\', '/') }];
 const prepare = async context => mkdir(join(context.workspace, context.session_id), { recursive: true });
 async function accept(context, artifacts, type) {

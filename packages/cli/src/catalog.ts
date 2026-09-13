@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { ContainerFailure, LocalTaskStore } from '../../container-core/src/index.ts';
+import { ContainerFailure, LocalTaskStore } from '../../container-core/src/internal.ts';
 import { identifier } from '../../container-core/src/storage/validation.ts';
 
 /** Local convenience index only. Task metadata remains authoritative in its Task root. */

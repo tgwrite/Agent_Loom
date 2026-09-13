@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { application } from './application.mjs';
 import { sha256 } from './handoff.mjs';
-import { LocalTaskStore, prepareSession, inspectTask } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore, prepareSession, inspectTask } from '../../packages/container-core/src/internal.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const args = process.argv.slice(2);
@@ -27,7 +27,7 @@ const before = await fingerprint();
 const output = resolve(repo, '.test-tmp', 'lightweight');
 await mkdir(output, { recursive: true });
 const root = await mkdtemp(join(output, 'run-'));
-const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'web-report-test',
+const store = await LocalTaskStore.create(root, { schema_version: 3, id: 'web-report-test',
   application_id: application.id, application, title: 'Web report native Plugin acceptance', created_at: new Date().toISOString() });
 const nativeConfig = join(root, 'pi-config');
 await mkdir(nativeConfig);

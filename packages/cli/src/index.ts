@@ -1,12 +1,14 @@
+import { toHostTaskStore } from '../../container-core/src/host.ts';
+import type { HostTaskStore } from '../../container-core/src/host.ts';
 import { connectLoom, discoverEntries, describeEntry } from '../../container-core/src/agent.ts';
 import type { AgentRequest } from '../../container-core/src/invocation.ts';
 import { validateRequest } from '../../container-core/src/invocation.ts';
-import { hostReadinessFailure, safeHostReadinessFailure, nativeReadinessReport } from '../../container-core/src/index.ts';
+import { hostReadinessFailure, safeHostReadinessFailure, nativeReadinessReport } from '../../container-core/src/internal.ts';
 import { dirname, resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, taskInspectionView, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/index.ts';
-import type { ApplicationDefinition, SessionHost } from '../../container-core/src/index.ts';
+import { ContainerFailure, LocalTaskStore, executeSession, inspectTask, taskInspectionView, prepareSession, resolveTaskPath, validateApplication } from '../../container-core/src/internal.ts';
+import type { ApplicationDefinition, SessionHost } from '../../container-core/src/internal.ts';
 import { requireNativeIntegration } from '../../runtime-pi/src/index.ts';
 import { TaskCatalog } from './catalog.ts';
 import { readHostBinding, saveHostBinding } from './host-binding.ts';
@@ -84,13 +86,13 @@ async function loadApplication(file: string): Promise<{ application: Application
   return { application: value, ...(nativeHost ? { nativeHost } : {}), ...(validateTaskInput ? { validateTaskInput } : {}) };
 }
 
-async function loadHost(file: string, store: LocalTaskStore): Promise<SessionHost> {
+async function loadHost(file: string, store: HostTaskStore): Promise<SessionHost> {
   let module: Record<string, unknown>;
   try { module = await import(pathToFileURL(resolve(file)).href) as Record<string, unknown>; }
   catch (error) { throw safeHostReadinessFailure(error, 'host-import'); }
   try {
     if (typeof module.createSessionHost !== 'function') throw hostReadinessFailure('host-contract');
-    const host: SessionHost = await module.createSessionHost({ store });
+    const host: SessionHost = await module.createSessionHost({ store: toHostTaskStore(store) });
     if (!host || typeof host.validate !== 'function' || typeof host.launch !== 'function'
       || !host.runtime || typeof host.runtime.id !== 'string' || typeof host.runtime.name !== 'string'
       || typeof host.runtime.version !== 'string') throw new Error();
@@ -127,7 +129,7 @@ function output(value: unknown, json: boolean): void {
     console.log(`Runtime: ${session.runtime.name}@${session.runtime.version}\nActor: ${session.actor.id}\nStatus: ${session.status}`);
     console.log(`Primary: ${session.primary_plugin_id ?? '(none)'}\nAspects: ${session.aspect_plugin_ids.join(', ') || '(none)'}`);
     for (const artifact of session.produced) {
-      console.log(`Produced: ${artifact.type}@${artifact.version} ${artifact.verification.status} (${artifact.id})`);
+      console.log(`Produced: ${artifact.type}@${artifact.version} ${artifact.assertion.status} (${artifact.id})`);
       if (artifact.native_provenance.length) console.log(`Native provenance: ${artifact.native_provenance.map(fact => fact.value).join(' ')}`);
     }
     for (const consumption of session.consumed) console.log(`Consumed: ${consumption.artifact_id} <- ${consumption.producer.session_id}`);
@@ -275,7 +277,7 @@ export async function main(args: string[]): Promise<number> {
       }
       phase = 'task-creation';
       await catalog.ensureAvailable(id);
-      const store = await LocalTaskStore.create(root, { schema_version: 2, id,
+      const store = await LocalTaskStore.create(root, { schema_version: 3, id,
         application_id: application.id, application, title: id, created_at: new Date().toISOString() });
       if (inputFile !== undefined) await writeFile(resolveTaskPath(store.taskRoot, '.agent-loom/input.json'),
         JSON.stringify(input) + '\n', { flag: 'wx', mode: 0o600 });

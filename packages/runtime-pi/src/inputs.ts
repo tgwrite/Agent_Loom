@@ -1,9 +1,10 @@
+import { matchesArtifact } from '../../container-core/src/artifact/index.ts';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { ContainerFailure, registerSafeDiagnostics, resolveTaskPath, taskRelativePath } from '../../container-core/src/index.ts';
-import type { ArtifactRef, ArtifactRequirement } from '../../container-core/src/index.ts';
+import { ContainerFailure, registerSafeDiagnostics, resolveTaskPath, taskRelativePath } from '../../container-core/src/internal.ts';
+import type { ArtifactRef, ArtifactRequirement } from '../../container-core/src/internal.ts';
 import type { PiApplicationContext } from './application-host.ts';
 
 const inputFailure = registerSafeDiagnostics('artifact-input', ['SELECTED_REFERENCE_MISMATCH', 'CONTRACT_MISMATCH', 'FILE_REFERENCE_REQUIRED', 'FILE_LOCATION_REJECTED', 'DIGEST_MISMATCH']);
@@ -11,7 +12,7 @@ const inputFailure = registerSafeDiagnostics('artifact-input', ['SELECTED_REFERE
 /** Read exactly the selected reference and bytes. Domain verification remains mandatory.
  * This helper never resolves an alternative, publishes, or records consumption. */
 export async function readArtifactFile<T>(context: PiApplicationContext, artifact: ArtifactRef,
-  requirement: ArtifactRequirement & { producer_plugin_id?: string },
+  requirement: ArtifactRequirement,
   verify: (bytes: Uint8Array, artifact: ArtifactRef) => T | Promise<T>): Promise<T> {
   const ref = structuredClone(artifact);
   const reject = (check: string): never => {
@@ -23,10 +24,7 @@ export async function readArtifactFile<T>(context: PiApplicationContext, artifac
   if (ref.task_id !== context.task_id || context.plan.task_id !== context.task_id
     || !context.plan.artifacts.some(selected => isDeepStrictEqual(selected, ref))
     || (requirement.input_name !== undefined && !isDeepStrictEqual(context.plan.named_artifacts?.[requirement.input_name], ref))) reject('SELECTED_REFERENCE_MISMATCH');
-  if (ref.type !== requirement.type || ref.version !== requirement.version
-    || ref.verification.status !== requirement.verification_status
-    || (requirement.artifact_id !== undefined && ref.id !== requirement.artifact_id)
-    || (requirement.producer_plugin_id !== undefined && ref.producer.plugin_id !== requirement.producer_plugin_id)) reject('CONTRACT_MISMATCH');
+  if (!matchesArtifact(ref, requirement)) reject('CONTRACT_MISMATCH');
   if (ref.payload_ref.kind !== 'file') return reject('FILE_REFERENCE_REQUIRED');
   let bytes: Uint8Array;
   try {

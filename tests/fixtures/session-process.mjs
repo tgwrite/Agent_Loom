@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { LocalTaskStore, executeSession, prepareSession, resolveTaskPath } from '../../dist/packages/container-core/src/index.js';
+import { LocalTaskStore, executeSession, prepareSession, resolveTaskPath } from '../../dist/packages/container-core/src/internal.js';
 import { artifact, session, timestamp } from '../helpers.ts';
 
 const [operation, root] = process.argv.slice(2);

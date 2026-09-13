@@ -11,7 +11,7 @@ import type { SessionRunRecord } from '../session/index.ts';
 import type { TaskRecord } from '../task/index.ts';
 
 export function validateTask(value: TaskRecord): void {
-  requireRecord(value.schema_version === 2, 'Unsupported Task schema version.');
+  requireRecord(value.schema_version === 3, 'Unsupported Task schema version; explicit migration is required.');
   identifier(value.id);
   identifier(value.application_id);
   validateApplication(value.application);
@@ -72,7 +72,7 @@ export function validateEvent(value: EventEnvelope): void {
   text(value.source);
   timestamp(value.timestamp);
   requireRecord(typeof value.type === 'string' && (
-    /^(session|capability)\.(started|completed|failed)$/.test(value.type)
+    /^session\.(started|completed|failed)$/.test(value.type)
     || value.type === 'artifact.published' || value.type === 'artifact.consumed'
     || value.type === 'observer.failed' || /^runtime\.[a-z][a-z0-9_.-]*$/.test(value.type)
   ), 'Unsupported Event type.');

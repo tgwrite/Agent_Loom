@@ -1,7 +1,7 @@
 import type { ApplicationDefinition } from '../application/index.ts';
 
 export interface TaskRecord {
-  schema_version: 2;
+  schema_version: 3;
   id: string;
   application_id: string;
   application: ApplicationDefinition;

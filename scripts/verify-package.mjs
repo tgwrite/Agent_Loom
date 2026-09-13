@@ -45,7 +45,7 @@ try {
   const cli = join(installed, 'bin/loom.mjs');
   assert(run(process.execPath, [cli, '--help'], unrelated).includes('loom task inspect'));
   const guide = await readFile(join(installed, 'AGENT_GUIDE.md'), 'utf8');
-  assert(guide.includes('readArtifactFile') && guide.includes('business_acceptance'));
+  assert(guide.includes('readArtifactFile') && guide.includes('producer_plugin_id'));
   for (const name of ['README.md', 'INSTALL.md', 'START_HERE.md', 'NATIVE_INTEGRATION.md',
     'ADAPTER_API.md', 'AGENT_API.md', 'TROUBLESHOOTING.md', 'AGENT_GUIDE.md']) {
     assert.deepEqual(await readFile(join(installed, 'manual', name)), await readFile(join(repo, 'manual', name)),
@@ -65,7 +65,7 @@ try {
     for (const profile of ['produce', 'consume']) run(process.execPath, start(profile), unrelated);
     const summary = JSON.parse(run(process.execPath, [cli, 'task', 'inspect', id, '--root', domainRoot, '--summary', '--json'], unrelated));
     assert.deepEqual(summary.counts, { sessions: 2, artifacts: 2, consumptions: 1, aspect_failures: 0 });
-    assert.equal(summary.business_acceptance, 'not-evaluated');
+    assert.equal(Object.hasOwn(summary, 'business_acceptance'), false);
     const result = summary.sessions.find(s => s.profile === 'consume').outputs[0];
     const data = JSON.parse(await readFile(join(domainRoot, result.payload_ref.path), 'utf8'));
     assert.deepEqual(data, domain === 'measurement' ? { total: 5, unit: 'm' } : { keys: ['item-one', 'item-two'] });
@@ -109,7 +109,7 @@ try {
     const check = JSON.parse(run(process.execPath, [cli, 'agent', 'check', ...args, '--request', requestFile], unrelated));
     assert.equal(check.blockers.length, 0); assert.equal(check.native_preflight.status, 'not-checked');
     const result = JSON.parse(run(process.execPath, [cli, 'agent', 'invoke', ...args, '--request', requestFile, '--exclusive-writer'], unrelated));
-    assert.equal(result.execution.status, 'completed'); assert.equal(result.business_acceptance.status, 'not-evaluated');
+    assert.equal(result.execution.status, 'completed'); assert.equal(Object.hasOwn(result, 'business_acceptance'), false);
     const facts = JSON.parse(run(process.execPath, [cli, 'agent', 'inspect', ...args, '--session', result.session_id], unrelated));
     assert.equal(facts.sessions[0].request_id, request.request_id);
     assert.equal(facts.sessions[0].observation.outcome_confirmed, true);
@@ -143,18 +143,23 @@ try {
   const ts = join(project, 'node_modules/typescript');
   // Copy only the pinned test compiler, never the checkout or its node_modules resolution tree.
   await cp(join(repo, 'node_modules/typescript'), ts, { recursive: true });
-  await writeFile(join(project, 'consumer.ts'), `import { LocalTaskStore, createNativeFailure, registerSafeDiagnostics, withTaskWriter, type TaskWriterLease, type FailureRecord, type ArtifactRef } from 'agent-loom';
+  await writeFile(join(project, 'consumer.ts'), `import { createTask, registerSafeDiagnostics, type HostTaskStore, type RunProfile, type ArtifactRef } from 'agent-loom';
 import { connectLoom, createRequest, type AgentRequest, type AgentReceipt, type DataSchema } from 'agent-loom/agent';
 import { createPiApplicationHost, createPiHostModule, definePiApplicationModule, readArtifactFile, readTaskInput, type PiApplicationHostOptions } from 'agent-loom/runtime-pi';
-const open: (root: string) => Promise<LocalTaskStore> = LocalTaskStore.open;
 const host: (options: PiApplicationHostOptions) => ReturnType<typeof createPiApplicationHost> = createPiApplicationHost;
 const id = (ref: ArtifactRef): string => ref.id;
 const request: AgentRequest = createRequest('task', 'entry');
 const schema: DataSchema = { type: 'object', required: ['label'], properties: { label: { type: 'string' } } };
 const unchecked: AgentReceipt['observation']['history'] = 'not-checked';
-const hold = (lease: TaskWriterLease) => { lease.retainOnExit(); lease.releaseOnExit(); };
-const failure: FailureRecord = createNativeFailure(registerSafeDiagnostics('domain', ['REJECTED'])('REJECTED'));
-void [open, host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request, failure, schema, unchecked, hold, withTaskWriter];\n`);
+const failure = registerSafeDiagnostics('domain', ['REJECTED'])('REJECTED');
+const profile: RunProfile = { id: 'run', aspects: [], requirements: [] };
+const root = (store: HostTaskStore) => store.taskRoot;
+// @ts-expect-error storage is no longer a root export
+import { LocalTaskStore } from 'agent-loom';
+// @ts-expect-error event internals are not a public contract
+import { EventEnvelope } from 'agent-loom';
+void [host, id, createPiHostModule, readArtifactFile, readTaskInput, connectLoom, definePiApplicationModule, request, failure, schema, unchecked, createTask, profile, root];
+`);
   run(process.execPath, [join(ts, 'bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2023', 'consumer.ts']);
   const beforeUninstall = JSON.stringify(snapshot);
   npm(['uninstall', '--global', 'agent-loom', '--prefix', prefix, '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);

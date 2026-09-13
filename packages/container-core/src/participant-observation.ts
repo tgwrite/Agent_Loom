@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { LocalTaskStore } from './storage/index.ts';
+import type { HostTaskStore } from './host.ts';
 import type { EventEnvelope } from './event/index.ts';
 import { requireRecord } from './record-validation.ts';
 
@@ -19,7 +19,7 @@ export function readParticipantObservation(event: EventEnvelope): ParticipantObs
   return { plugin_id: value.plugin_id, phase: value.phase as ParticipantObservation['phase'], status: value.status as ParticipantObservation['status'] };
 }
 
-export async function recordParticipantObservation(store: LocalTaskStore, sessionId: string, observation: ParticipantObservation): Promise<void> {
+export async function recordParticipantObservation(store: HostTaskStore, sessionId: string, observation: ParticipantObservation): Promise<void> {
   const session = await store.getSession(sessionId);
   const event: EventEnvelope = { id: randomUUID(), type: 'runtime.loom.participant', source: 'session-host',
     task_id: session.task_id, session_id: session.id, actor_id: session.actor.id, correlation_id: session.id,

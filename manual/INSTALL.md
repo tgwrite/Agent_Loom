@@ -2,15 +2,25 @@
 
 For the complete application workflow, continue with [Getting started](START_HERE.md).
 
-Use Node.js >=24.12.0 with npm. Download the `.tgz` and SHA256SUMS from
-[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases), or build a local
-candidate from the source checkout with `npm run package:local`;
-this version is not published to an npm registry. Keep the archive for reinstalling
-projects that refer to it as a local dependency. The archive requires no install
-scripts, compiler, or third-party runtime downloads.
+Use Node.js >=24.12.0 with npm. This manual targets the unreleased 0.2.0-alpha.1
+candidate. Build its local archive from a source checkout with `npm ci` followed by
+`npm run package:local`. Keep the archive and SHA256SUMS for local installation.
+Review [migration](AGENT_GUIDE.md#compatibility-and-migration) before upgrading.
+
+Run these commands in the source checkout, not in the installed package:
+
+```sh
+npm ci
+npm run package:local
+```
+
+The last command prints a `package` path under `local/packages/`. That directory
+contains the archive, `SHA256SUMS` and `INSTALL.md`. Copy the archive and checksum
+into the application directory for the commands below. The precompiled archive
+requires no install scripts, compiler or third-party runtime downloads.
 
 Before installing, compare the archive's SHA-256 with the entry in SHA256SUMS.
-In PowerShell, use `Get-FileHash ./agent-loom-0.1.0-alpha.7.tgz -Algorithm SHA256`;
+In PowerShell, use `Get-FileHash ./agent-loom-0.2.0-alpha.1.tgz -Algorithm SHA256`;
 on Linux, use `sha256sum -c SHA256SUMS`.
 
 ## Command-line tool
@@ -18,7 +28,7 @@ on Linux, use `sha256sum -c SHA256SUMS`.
 From the directory containing the archive:
 
 ```sh
-npm install --global ./agent-loom-0.1.0-alpha.7.tgz --offline --ignore-scripts --no-audit --no-fund
+npm install --global ./agent-loom-0.2.0-alpha.1.tgz --offline --ignore-scripts --no-audit --no-fund
 loom --version
 loom --help
 ```
@@ -33,7 +43,7 @@ In a separate, empty project, copy the archive into the project first:
 
 ```sh
 npm init -y
-npm install ./agent-loom-0.1.0-alpha.7.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
+npm install ./agent-loom-0.2.0-alpha.1.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
 npm pkg set "scripts.loom=loom"
 npm run loom -- --version
 ```
@@ -41,7 +51,7 @@ npm run loom -- --version
 Create an `.mjs` file, or use an ESM project:
 
 ```js
-import { LocalTaskStore, prepareSession, executeSession, inspectTask } from 'agent-loom';
+import { createTask, connectLoom, createRequest } from 'agent-loom';
 import { createPiApplicationHost } from 'agent-loom/runtime-pi';
 ```
 

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { TestContext } from 'node:test';
-import { executeSession, inspectTask, LocalTaskStore, prepareSession, readNativeProvenance } from '../../packages/container-core/src/index.ts';
-import type { ApplicationDefinition, SessionPlan } from '../../packages/container-core/src/index.ts';
+import { executeSession, inspectTask, LocalTaskStore, prepareSession, readNativeProvenance } from '../../packages/container-core/src/internal.ts';
+import type { ApplicationDefinition, SessionPlan } from '../../packages/container-core/src/internal.ts';
 import { createPiHostModule, readArtifactFile } from '../../packages/runtime-pi/src/index.ts';
 import type { PiAdapterRegistration, PiApplicationContext, PiSdk } from '../../packages/runtime-pi/src/index.ts';
 import { summarizeTask } from '../../packages/cli/src/experience.ts';
@@ -18,15 +18,15 @@ async function setup(t: TestContext, domain: 'measurement' | 'catalog' = 'measur
   for (const entry of Object.values(entries)) await writeFile(entry, 'export default () => {};');
   const application: ApplicationDefinition = { id: domain, version: '1', runtime: { id: 'pi', version: 'synthetic' },
     plugins: ['producer', 'consumer', 'observer'].map(id => ({ id, role: id === 'observer' ? 'aspect' : 'domain',
-      native: { runtime: 'pi', binding_key: id }, capabilities: [],
+      native: { runtime: 'pi', binding_key: id },
       produces: id === 'producer' ? [{ type: `${domain}.input`, version: '1' }] : [] })),
     profiles: [{ id: 'produce', primary: 'producer', aspects: [], requirements: [] },
       { id: 'consume', primary: 'consumer', aspects: ['observer'], requirements: [
-        { type: `${domain}.input`, version: '1', verification_status: 'READY' }] },
+        { type: `${domain}.input`, version: '1', assertion_status: 'READY' }] },
       { id: 'reuse', primary: 'consumer', aspects: [], requirements: [
-        { type: `${domain}.input`, version: '1', verification_status: 'READY' }] }],
+        { type: `${domain}.input`, version: '1', assertion_status: 'READY' }] }],
   };
-  const store = await LocalTaskStore.create(join(root, 'task'), { schema_version: 2, id: 'sample-task',
+  const store = await LocalTaskStore.create(join(root, 'task'), { schema_version: 3, id: 'sample-task',
     application_id: application.id, application, title: 'Synthetic adapter integration', created_at: new Date().toISOString() });
   const calls = { allocated: 0, configured: 0, initialized: 0, executed: 0, verified: 0, created: 0 };
   const settings: Record<string, unknown>[] = [];
@@ -54,7 +54,7 @@ async function setup(t: TestContext, domain: 'measurement' | 'catalog' = 'measur
         const value = domain === 'measurement' ? { samples: [2, 3], unit: 'm' } : { entries: [{ key: 'item-one' }] };
         const path = `input-${context.session_id}.json`;
         await writeFile(join(context.task_root, path), JSON.stringify(value));
-        return [{ type: `${domain}.input`, version: '1', verification_status: 'READY', path }];
+        return [{ type: `${domain}.input`, version: '1', assertion_status: 'READY', path }];
       },
     }; } },
     consumer: { entry: entries.consumer!, create() { calls.created++; return {
@@ -105,7 +105,7 @@ for (const domain of ['measurement', 'catalog'] as const) test(`shared Host and 
   const before = await readFile(join(f.store.taskRoot, '.agent-loom', 'artifacts.jsonl'));
   const summary = summarizeTask(snapshot);
   assert.deepEqual(summary.counts, { sessions: 3, artifacts: 1, consumptions: 2, aspect_failures: 0 });
-  assert.equal(summary.business_acceptance, 'not-evaluated');
+  assert.equal(Object.hasOwn(summary, 'business_acceptance'), false);
   assert.equal(summary.sessions.find(s => s.id === consumer.id)!.consumed[0]!.producer.session_id, producer.id);
   assert.deepEqual(await readFile(join(f.store.taskRoot, '.agent-loom', 'artifacts.jsonl')), before);
 });
@@ -155,7 +155,7 @@ test('new Host preserves aspect attribution and never presents completion as acc
   const inspected = summary.sessions.find(s => s.id === session.id)!;
   assert.equal(inspected.aspect_failures[0]!.plugin_id, 'observer');
   assert(inspected.aspect_failures[0]!.context.some(fact => fact.name === 'failure_class' && fact.value === 'aspect-execution'));
-  assert.equal(summary.business_acceptance, 'not-evaluated');
+  assert.equal(Object.hasOwn(summary, 'business_acceptance'), false);
 });
 
 test('preflight rejects version mismatch and unexpected extensions without allocating Sessions', async t => {

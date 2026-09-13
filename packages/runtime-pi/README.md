@@ -19,7 +19,7 @@ Pi's own event lifecycle or introduce scheduling. Native load and domain
 initialization failures do not enter this phase.
 
 Publication facts contain a declared type/version, Task-relative file path and
-native verification status. The host derives Plugin, Session, Actor and Runtime
+native producer assertion status. The host derives Plugin, Session, Actor and Runtime
 identities, checks containment and hashes existing bytes. It does not generate
 domain or review content. Native extension errors retain their bound Plugin and a
 safe event phase; raw prompts, native diagnostics and stack traces stay outside Core.

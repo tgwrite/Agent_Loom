@@ -22,7 +22,6 @@ export interface AgentReceipt {
   artifacts: { id: string; type: string; version: string; producer_plugin_id: string }[];
   aspect_failures: { plugin_id: string; reason_code: string }[];
   participants: ParticipantSummary;
-  business_acceptance: { status: 'not-evaluated'; references?: { artifact_id: string; producer_plugin_id: string; type: string; version: string }[] };
   diagnostic?: SafeDiagnostic;
   /** Immediate observation only; not a replacement for persisted outcome evidence. */
   call_diagnostic?: SafeDiagnostic;
@@ -74,7 +73,7 @@ function participants(session: TaskInspection['sessions'][number]): ParticipantS
 }
 
 type SessionFacts = Pick<AgentReceipt, 'execution' | 'observation' | 'resolved_inputs' | 'consumed'
-  | 'artifacts' | 'aspect_failures' | 'participants' | 'business_acceptance' | 'diagnostic' | 'inspection_ref' | 'retry_safety'>;
+  | 'artifacts' | 'aspect_failures' | 'participants' | 'diagnostic' | 'inspection_ref' | 'retry_safety'>;
 
 /** Both supported entrypoints interpret governance evidence without inventing request identity. */
 export function projectSessionFacts(session: TaskInspection['sessions'][number]): SessionFacts {
@@ -98,10 +97,6 @@ export function projectSessionFacts(session: TaskInspection['sessions'][number])
     artifacts: session.produced.map(a => ({ id: a.id, type: a.type, version: a.version, producer_plugin_id: a.producer.plugin_id })),
     aspect_failures: session.aspect_failures.map(a => ({ plugin_id: a.plugin_id, reason_code: readSafeDiagnostic(a.failure.diagnostic)?.reason_code ?? 'ASPECT_FAILED' })),
     participants: participants(session),
-    business_acceptance: { status: 'not-evaluated', references: session.produced.filter(artifact =>
-      session.acceptance_artifact_contracts.some(contract => contract.producer_plugin_id === artifact.producer.plugin_id
-        && contract.type === artifact.type && contract.version === artifact.version))
-      .map(artifact => ({ artifact_id: artifact.id, producer_plugin_id: artifact.producer.plugin_id, type: artifact.type, version: artifact.version })) },
     ...(diagnostic ? { diagnostic } : {}),
     inspection_ref: { task_id: session.task_id, session_id: session.id }, retry_safety: 'not-established' };
 }

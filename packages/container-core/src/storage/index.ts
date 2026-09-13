@@ -2,7 +2,7 @@ import { access, appendFile, mkdir, readFile, readdir, rename, rm, writeFile } f
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ArtifactRecord, ArtifactRef, ArtifactRequirement, ArtifactConsumptionRecord } from '../artifact/index.ts';
-import { readNativeProvenance, toArtifactRef } from '../artifact/index.ts';
+import { matchesArtifact, readNativeProvenance, toArtifactRef } from '../artifact/index.ts';
 import { resolveProfile } from '../application/index.ts';
 import { invocationRequirements } from '../invocation.ts';
 import type { CoreEventType, EventEnvelope } from '../event/index.ts';
@@ -232,10 +232,7 @@ export class LocalTaskStore {
   }
 
   async resolveArtifact(requirement: ArtifactRequirement): Promise<ArtifactRef> {
-    const matches = (await this.listArtifacts()).filter((artifact) =>
-      artifact.type === requirement.type && artifact.version === requirement.version
-      && artifact.verification.status === requirement.verification_status
-      && (requirement.artifact_id === undefined || artifact.id === requirement.artifact_id));
+    const matches = (await this.listArtifacts()).filter(artifact => matchesArtifact(artifact, requirement));
     const match = matches[0];
     if (!match) throw new ContainerFailure('PreconditionNotSatisfied', 'No Artifact satisfies this Task requirement.', {
       missing: [{ ...requirement }],

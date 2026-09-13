@@ -15,13 +15,13 @@ test('CLI reports the missing entry field and accepts the corrected definition w
   const f = await scratch(t);
   const app = join(f.directory, 'entry.app.mjs');
   const { testApplication } = await import('../helpers.ts');
-  const entry: Record<string, unknown> = { id: 'sample.run', purpose: 'Synthetic entry', request_mapping: 'v1' };
+  const entry: Record<string, unknown> = { request_mapping: 'v1' };
   const save = () => writeFile(app, `export const nativeHost = './host.mjs'; export const application = ${JSON.stringify({
     ...testApplication, profiles: [{ ...testApplication.profiles[0], entry }],
   })};`);
   await writeFile(join(f.directory, 'host.mjs'), 'throw new Error("synthetic-host-canary");');
   const args = ['app', 'validate', app, '--definition-only', '--explain', '--json'];
-  for (const field of ['implementation', 'effect_declarations']) {
+  for (const field of ['id']) {
     await save();
     const result = run(args, f.env);
     assert.equal(result.status, 1);
@@ -30,7 +30,7 @@ test('CLI reports the missing entry field and accepts the corrected definition w
     assert.equal(failure.error.details.path, `profiles[0].entry.${field}`);
     assert.equal(failure.diagnostic.phase, 'application-loading');
     assert(!result.stderr.includes('synthetic-host-canary'));
-    entry[field] = field === 'implementation' ? 'native' : [];
+    entry[field] = 'sample.run';
   }
   await save();
   const result = run(args, f.env);
@@ -86,7 +86,7 @@ test('explanation does not load a Host, and summary preserves the full JSON cont
   const before = run(args, f.env).stdout;
   const summary = run([...args, '--summary'], f.env);
   assert.equal(summary.status, 0);
-  assert.equal(JSON.parse(summary.stdout).business_acceptance, 'not-evaluated');
+  assert.equal(Object.hasOwn(JSON.parse(summary.stdout), 'business_acceptance'), false);
   assert.equal(JSON.parse(summary.stdout).schema_version, 1);
   assert.equal(run(args, f.env).stdout, before);
   const blocked = run(['session', 'start', '--task', 'summary-task', '--profile', 'test-consumer', '--json'], f.env);

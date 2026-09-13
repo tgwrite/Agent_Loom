@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { LocalTaskStore, prepareSession, executeSession, inspectTask } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore, prepareSession, executeSession, inspectTask } from '../../packages/container-core/src/internal.ts';
 import { createPiApplicationHost } from '../../packages/runtime-pi/src/index.ts';
 import { nativeRuntime } from './native-runtime.mjs';
 import { webAdapters } from './web-adapters.mjs';

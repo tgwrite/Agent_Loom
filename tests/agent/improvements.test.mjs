@@ -4,14 +4,14 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalTaskStore, validateApplication, prepareSession, withTaskWriter, recordParticipantObservation } from '../../dist/packages/container-core/src/index.js';
+import { LocalTaskStore, validateApplication, prepareSession, withTaskWriter, recordParticipantObservation } from '../../dist/packages/container-core/src/internal.js';
 import { connectLoom, describeEntry, createRequest } from '../../dist/packages/container-core/src/agent.js';
 
-function application(entry = {}) {
+function application({ data_examples, ...entry } = {}) {
   return { id: 'sample', version: '1', runtime: { id: 'synthetic', version: '1' },
-    plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'synthetic', binding_key: 'domain' }, capabilities: [], produces: [] }],
+    plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'synthetic', binding_key: 'domain' }, produces: [] }],
     profiles: [{ id: 'run', primary: 'domain', aspects: [], requirements: [], entry: {
-      id: 'sample.run', purpose: 'Synthetic operation', implementation: 'synthetic', request_mapping: 'v1', effect_declarations: [], ...entry } }] };
+      id: 'sample.run', request_mapping: 'v1', ...entry }, presentation: { purpose: 'Synthetic operation', implementation: 'synthetic', data_examples } }] };
 }
 const schema = { type: 'object', required: ['sources'], additionalProperties: false,
   properties: { sources: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
@@ -20,7 +20,7 @@ const schema = { type: 'object', required: ['sources'], additionalProperties: fa
 async function fixture(t, app = application()) {
   const root = await mkdtemp(join(tmpdir(), 'loom-improvements-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'sample-task', application_id: app.id,
+  const store = await LocalTaskStore.create(root, { schema_version: 3, id: 'sample-task', application_id: app.id,
     application: app, title: 'Synthetic Task', created_at: new Date().toISOString() });
   let created = 0;
   const host = { actor: { id: 'synthetic-actor' }, async createHost() {
@@ -58,14 +58,14 @@ test('declared data contracts are discoverable and reject bad input before any H
   assert.equal((await f.loom.invoke(request)).execution.status, 'completed');
 });
 
-test('Schema declarations reject unsupported features and inconsistent examples; old entries remain compatible', async t => {
+test('Schema declarations reject unsupported features; presentation does not govern execution', async t => {
   for (const data_schema of [{ $ref: 'private-canary' }, { type: ['string', 'null'] },
     { properties: { 'private/path': {} } }, { minLength: -1 }, { enum: [] }, { enum: [0, -0] }, new Date(), { items: { format: 'uri' } }]) {
     assert.throws(() => validateApplication(application({ data_schema })), error => {
       assert.equal(error.code, 'InvalidDefinition'); assert.doesNotMatch(JSON.stringify(error), /private-canary|private\/path/); return true;
     });
   }
-  assert.throws(() => validateApplication(application({ data_schema: schema, data_examples: [{}] })), { code: 'InvalidDefinition' });
+  assert.doesNotThrow(() => validateApplication(application({ data_schema: schema, data_examples: [{}] })));
   const f = await fixture(t);
   assert.equal(describeEntry(f.store.task.application, 'sample.run').parameter_validation.data, 'application-owned');
   assert.equal((await f.loom.invoke({ ...f.request(), data: { free: 'value' } })).execution.status, 'completed');
@@ -124,7 +124,7 @@ test('exclusive invocation blocks competing writers and rechecks unconfirmed his
 
 test('writer ownership works across processes and cleanup never removes another owner', async t => {
   const f = await fixture(t);
-  const module = new URL('../../dist/packages/container-core/src/index.js', import.meta.url).href;
+  const module = new URL('../../dist/packages/container-core/src/internal.js', import.meta.url).href;
   await withTaskWriter(f.store, async () => {
     const child = spawnSync(process.execPath, ['--input-type=module', '-e',
       `import {LocalTaskStore,withTaskWriter} from ${JSON.stringify(module)};
@@ -158,9 +158,9 @@ test('lock release failure preserves confirmed execution and blocks subsequent w
   assert.equal(f.created(), 1);
 });
 
-test('participant summaries distinguish observations and link only app-declared acceptance artifacts', async t => {
-  const app = application({ acceptance_artifacts: [{ type: 'audit.report', version: '1', producer_plugin_id: 'audit' }] });
-  app.plugins.push({ id: 'audit', role: 'aspect', native: { runtime: 'synthetic', binding_key: 'audit' }, capabilities: [],
+test('participant summaries distinguish observations; proof outputs remain ordinary artifacts', async t => {
+  const app = application({ });
+  app.plugins.push({ id: 'audit', role: 'aspect', native: { runtime: 'synthetic', binding_key: 'audit' },
     produces: [{ type: 'audit.report', version: '1' }, { type: 'audit.other', version: '1' }] });
   app.profiles[0].aspects.push('audit');
   const f = await fixture(t, app);
@@ -172,8 +172,8 @@ test('participant summaries distinguish observations and link only app-declared 
     await assert.rejects(recordParticipantObservation(f.store, mode, { plugin_id: 'domain', phase: 'aspect-after-run', status: 'started' }), { code: 'InvalidRecord' });
     if (mode !== 'absent') for (const type of ['audit.report', 'audit.other']) await f.store.publishArtifact({
       id: `${mode}-${type.replace('.', '-')}`, type, version: '1', task_id: f.store.task.id,
-      producer: { session_id: mode, plugin_id: 'audit', capability_id: 'publish' }, executor: { actor_id: 'actor', runtime_id: 'synthetic' },
-      payload_ref: { kind: 'file', path: 'synthetic.json' }, sha256: 'a'.repeat(64), verification: { status: 'READY' }, created_at: stamp });
+      producer: { session_id: mode, plugin_id: 'audit', }, executor: { actor_id: 'actor', runtime_id: 'synthetic' },
+      payload_ref: { kind: 'file', path: 'synthetic.json' }, sha256: 'a'.repeat(64), assertion: { status: 'READY' }, created_at: stamp });
     if (mode === 'completed' || mode === 'incomplete') for (const phase of mode === 'completed' ? ['started', 'completed'] : ['completed'])
       await recordParticipantObservation(f.store, mode, { plugin_id: 'audit', phase: 'aspect-after-run', status: phase, extra: 'private-observation-canary' });
     if (mode === 'failed') await f.store.recordObserverFailure(mode, 'audit', {
@@ -184,9 +184,7 @@ test('participant summaries distinguish observations and link only app-declared 
     assert.equal(receipt.execution.status, 'completed');
     assert.equal(receipt.participants.aspects[0].status,
       { absent: 'not-observed', publication: 'publication-observed', completed: 'completed', failed: 'failed', incomplete: 'unconfirmed' }[mode]);
-    assert.equal(receipt.business_acceptance.status, 'not-evaluated');
-    assert.deepEqual(receipt.business_acceptance.references.map(ref => ref.type), mode === 'absent' ? [] : ['audit.report']);
+    assert.equal(Object.hasOwn(receipt, 'business_acceptance'), false);
+    assert.deepEqual(receipt.artifacts.map(ref => ref.type), mode === 'absent' ? [] : ['audit.report', 'audit.other']);
   }
-  const invalid = structuredClone(app); invalid.profiles[0].entry.acceptance_artifacts[0].producer_plugin_id = 'domain';
-  assert.throws(() => validateApplication(invalid), { code: 'InvalidDefinition' });
 });

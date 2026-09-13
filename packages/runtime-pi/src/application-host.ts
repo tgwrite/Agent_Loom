@@ -1,8 +1,9 @@
+import type { HostTaskStore } from '../../container-core/src/host.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
-import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath, recordParticipantObservation, safeNativeFailure } from '../../container-core/src/index.ts';
-import type { ArtifactRef, ArtifactProducerPhase, LocalTaskStore, ObserverFailureContext, AgentRequest, SessionPlan } from '../../container-core/src/index.ts';
+import { ContainerFailure, diagnosticFor, resolveProfile, resolveTaskPath, taskRelativePath, recordParticipantObservation, safeNativeFailure } from '../../container-core/src/internal.ts';
+import type { ArtifactRef, ArtifactProducerPhase, ObserverFailureContext, AgentRequest, SessionPlan } from '../../container-core/src/internal.ts';
 import { createPiSessionHost } from './session-host.ts';
 import type { PiFailureOrigin, PiPluginBinding, PiSession, PiSessionContext, PiSessionHostOptions } from './session-host.ts';
 
@@ -11,7 +12,7 @@ export interface NativePublication {
   type: string;
   version: string;
   path: string;
-  verification_status: string;
+  assertion_status: string;
 }
 
 export interface PiApplicationContext extends PiSessionContext { task_id: string; request?: AgentRequest }
@@ -27,7 +28,7 @@ export interface PiApplicationAdapter extends PiPluginBinding {
 
 export interface PiApplicationHostOptions extends Omit<PiSessionHostOptions,
   'expectedVersion' | 'bindings' | 'initialize' | 'run' | 'observe' | 'finalize'> {
-  store: LocalTaskStore;
+  store: HostTaskStore;
   /** Application native.binding_key -> reusable adapter. */
   adapters: Readonly<Record<string, PiApplicationAdapter>>;
 }
@@ -105,8 +106,8 @@ function createSelectedHost(options: PiApplicationHostOptions, profileId: string
       const plugin = store.task.application.plugins.find(p => p.id === pluginId);
       if (!context.plan.plugin_ids.includes(pluginId)
         || !plugin?.produces?.some(p => p.type === publication.type && p.version === publication.version)
-        || typeof publication.verification_status !== 'string' || !publication.verification_status.trim()) {
-        throw new ContainerFailure('InvalidRecord', 'Native publication contract or verification is invalid.');
+        || typeof publication.assertion_status !== 'string' || !publication.assertion_status.trim()) {
+        throw new ContainerFailure('InvalidRecord', 'Native publication contract or assertion is invalid.');
       }
       const path = await realpath(resolveTaskPath(store.taskRoot, publication.path));
       taskRelativePath(relative(await realpath(store.taskRoot), path).replaceAll('\\', '/'));
@@ -115,10 +116,10 @@ function createSelectedHost(options: PiApplicationHostOptions, profileId: string
     for (const { publication, digest } of records) await enqueue(async () => {
       try { await store.publishArtifact({ id: randomUUID(), task_id: store.task.id,
       type: publication.type, version: publication.version,
-      producer: { plugin_id: pluginId, capability_id: 'native-publication', session_id: producer.id },
+      producer: { plugin_id: pluginId, session_id: producer.id },
       producer_phase: producerPhase, native_runtime_session_id: nativeSessionId,
       executor: { actor_id: producer.actor.id, runtime_id: producer.runtime.id },
-      verification: { status: publication.verification_status }, payload_ref: { kind: 'file', path: publication.path },
+      assertion: { status: publication.assertion_status }, payload_ref: { kind: 'file', path: publication.path },
       sha256: digest, created_at: new Date().toISOString() }); }
       catch (error) {
         if (context.plan.aspect_plugin_ids.includes(pluginId)) {

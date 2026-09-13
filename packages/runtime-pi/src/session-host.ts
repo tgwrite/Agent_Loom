@@ -1,7 +1,7 @@
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { ContainerFailure, safeNativeFailure, hostReadinessFailure, safeHostReadinessFailure, registerSafeDiagnostics } from '../../container-core/src/index.ts';
-import type { ArtifactRef, FailurePhase, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/index.ts';
+import { ContainerFailure, safeNativeFailure, hostReadinessFailure, safeHostReadinessFailure, registerSafeDiagnostics } from '../../container-core/src/internal.ts';
+import type { ArtifactRef, FailurePhase, NativeSessionHandle, SessionHost, SessionPlan } from '../../container-core/src/internal.ts';
 
 /** The small SDK surface exercised by the bridge; the SDK is supplied locally. */
 export interface PiSession {

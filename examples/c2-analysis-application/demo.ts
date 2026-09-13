@@ -2,14 +2,14 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalTaskStore, resolveProfile } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore, resolveProfile } from '../../packages/container-core/src/internal.ts';
 import { c2AnalysisApplication } from './application.ts';
 import { decoderHandoffRequirement } from '../../adapters/c2decoder-pi/src/index.ts';
 
 const root = await mkdtemp(join(tmpdir(), 'agent-loom-demo-'));
 const timestamp = '2026-01-01T00:00:00.000Z';
 try {
-  const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'demo-task',
+  const store = await LocalTaskStore.create(root, { schema_version: 3, id: 'demo-task',
     application_id: 'c2-analysis', application: c2AnalysisApplication,
     title: 'Synthetic Artifact handoff', created_at: timestamp });
   const producer = resolveProfile(c2AnalysisApplication, 'c2forge');
@@ -24,8 +24,8 @@ try {
   await writeFile(join(root, 'synthetic-handoff.json'), payload);
   await store.publishArtifact({ id: 'demo-handoff', task_id: store.task.id,
     type: 'c2forge.decoder-handoff', version: '3',
-    producer: { plugin_id: 'c2forge', capability_id: 'synthetic-publication', session_id: 'producer-session' },
-    executor: { actor_id: actor.id, runtime_id: runtime.id }, verification: { status: 'READY' },
+    producer: { plugin_id: 'c2forge', session_id: 'producer-session' },
+    executor: { actor_id: actor.id, runtime_id: runtime.id }, assertion: { status: 'READY' },
     payload_ref: { kind: 'file', path: 'synthetic-handoff.json' },
     sha256: createHash('sha256').update(payload).digest('hex'), created_at: timestamp });
   await store.settleSession('producer-session', 'completed', timestamp);

@@ -5,11 +5,11 @@ export const application = {
   plugins: [
     ...[['source-capture', 'capture', 'source.snapshot'], ['markdown-normalize', 'normalize', 'normalized.data'],
       ['html-publish', 'publish', 'final.output']].map(([id, binding_key, type]) => ({ id, role: 'domain',
-        native: { runtime: 'pi', binding_key }, capabilities: [], produces: [{ type, version: '1' }] })),
+        native: { runtime: 'pi', binding_key }, produces: [{ type, version: '1' }] })),
     ...structuredClone(reference.plugins.filter(p => p.role === 'aspect')),
   ],
   profiles: [['capture', 'source-capture'], ['normalize', 'markdown-normalize', 'source.snapshot'],
     ['publish', 'html-publish', 'normalized.data']].map(([id, primary, input]) => ({ id, primary, workspace: id,
       aspects: ['run-metrics', 'conversation-review', 'session-audit'], requirements: input
-        ? [{ type: input, version: '1', verification_status: 'COMPLETED' }] : [] })),
+        ? [{ type: input, version: '1', assertion_status: 'COMPLETED' }] : [] })),
 };

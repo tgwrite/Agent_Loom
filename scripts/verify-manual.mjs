@@ -50,16 +50,36 @@ try {
   await copyFile(archive, join(project, basename(archive)));
   await npm(['install', './' + basename(archive), '--save-exact', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);
   const cli = join(project, 'node_modules/agent-loom/bin/loom.mjs');
-  const loom = args => run([cli, ...args]);
-  const json = async args => JSON.parse(await loom([...args, '--json']));
+  const loom = (args, expected = 0) => run([cli, ...args], expected);
+  const json = async (args, expected = 0) => JSON.parse(await loom([...args, '--json'], expected));
   const demoApp = './node_modules/agent-loom/examples/integration/measurement.mjs';
   await json(['app', 'validate', demoApp, '--definition-only', '--explain']);
   await json(['task', 'create', '--app', demoApp, '--root', './sample-task', '--name', 'sample-task',
     '--input', './node_modules/agent-loom/examples/integration/measurement.json']);
-  for (const profile of ['produce', 'consume'])
-    await json(['session', 'start', '--task', 'sample-task', '--root', './sample-task', '--profile', profile]);
+  const startHere = await readFile(join(repo, 'manual/START_HERE.md'), 'utf8');
+  const requestBlock = startHere.match(/<!-- file: consume-request.json -->\r?\n```json\r?\n([\s\S]*?)\r?\n```/);
+  assert(requestBlock, 'The first Task walkthrough must include its request file.');
+  await writeFile(join(project, 'consume-request.json'), requestBlock[1]);
+  const consumeArgs = ['--task', 'sample-task', '--root', './sample-task', '--request', './consume-request.json'];
+  const blocked = await json(['agent', 'check', ...consumeArgs], 1);
+  assert(blocked.blockers.some(item => item.diagnostic.reason_code === 'MISSING_DEPENDENCY'));
+  assert.equal((await json(['task', 'inspect', 'sample-task', '--root', './sample-task', '--summary'])).counts.sessions, 0);
+  await json(['session', 'start', '--task', 'sample-task', '--root', './sample-task', '--profile', 'produce']);
+  assert.deepEqual((await json(['agent', 'check', ...consumeArgs])).blockers, []);
+  const consumed = await json(['agent', 'invoke', ...consumeArgs, '--exclusive-writer']);
+  assert.equal(consumed.execution.status, 'completed');
+  assert.equal(consumed.consumed.length, 1);
   const summary = await json(['task', 'inspect', 'sample-task', '--root', './sample-task', '--summary']);
   assert.deepEqual(summary.counts, { sessions: 2, artifacts: 2, consumptions: 1, aspect_failures: 0 });
+
+  const adapterGuide = await readFile(join(repo, 'manual/ADAPTER_API.md'), 'utf8');
+  const evidenceBlock = adapterGuide.match(/<!-- example: evidence-application.mjs -->\r?\n```js\r?\n([\s\S]*?)\r?\n```/);
+  assert(evidenceBlock, 'The proof recipe must include a complete declaration.');
+  await writeFile(join(project, 'evidence-application.mjs'), evidenceBlock[1]);
+  await json(['app', 'validate', './evidence-application.mjs', '--definition-only']);
+  const evidenceDescription = await json(['agent', 'describe', 'sample.consume', '--app', './evidence-application.mjs']);
+  assert.deepEqual(evidenceDescription.inputs.map(input => input.producer_plugin_id), ['author', 'verifier']);
+  assert.equal(evidenceDescription.inputs[1].assertion_status, 'READY');
 
   const text = await readFile(join(repo, 'manual/NATIVE_INTEGRATION.md'), 'utf8');
   const names = [];

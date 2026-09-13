@@ -18,7 +18,7 @@ export function relativePath(value, workspace = false) {
 }
 function failure(value) { text(value.code); text(value.message); text(value.source); date(value.timestamp); }
 function task(value) {
-  requireValue(value.schema_version === 2);
+  requireValue(value.schema_version === 3);
   id(value.id); id(value.application_id); text(value.title); date(value.created_at);
   const app = value.application;
   requireValue(app.id === value.application_id); text(app.version); text(app.runtime.id); text(app.runtime.version);
@@ -35,7 +35,7 @@ function task(value) {
     requireValue(new Set(selected).size === selected.length);
     if (p.primary) requireValue(app.plugins.some(x => x.id === p.primary && x.role === 'domain'));
     for (const aspect of p.aspects) requireValue(app.plugins.some(x => x.id === aspect && x.role === 'aspect'));
-    for (const r of p.requirements) { text(r.type); text(r.version); text(r.verification_status); }
+    for (const r of p.requirements) { text(r.type); text(r.version); text(r.assertion_status); }
   }
 }
 function session(value, state) {
@@ -53,10 +53,9 @@ function session(value, state) {
 }
 function artifact(value, state) {
   id(value.id); requireValue(value.task_id === state.task.id); hash(value.sha256); date(value.created_at);
-  text(value.type); text(value.version); text(value.verification.status);
+  text(value.type); text(value.version); text(value.assertion.status);
   const s = state.sessions.find(s => s.id === value.producer.session_id);
   requireValue(s && s.plugin_ids.includes(value.producer.plugin_id));
-  id(value.producer.capability_id);
   const p = state.task.application.plugins.find(p => p.id === value.producer.plugin_id);
   requireValue(p.produces?.some(c => c.type === value.type && c.version === value.version));
   requireValue(value.executor.actor_id === s.actor.id && value.executor.runtime_id === s.runtime.id);
@@ -136,7 +135,7 @@ export class ControlStore {
   async listEvents(id) { return (await this.read()).events.filter(e => e.session_id === id); }
   async resolveArtifact(r) {
     const matches = (await this.listArtifacts()).filter(a => a.type === r.type && a.version === r.version
-      && a.verification.status === r.verification_status && (!r.artifact_id || a.id === r.artifact_id));
+      && a.assertion.status === r.assertion_status && (!r.artifact_id || a.id === r.artifact_id));
     requireValue(matches.length, 'PreconditionNotSatisfied'); requireValue(matches.length === 1, 'BindingConflict'); return matches[0];
   }
   async startSession(s) {

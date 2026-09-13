@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { appendFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { LocalTaskStore } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, requirement, session, timestamp } from '../helpers.ts';
 
 test('Task creation is exclusive and identity survives attempted replacement', async (t) => {

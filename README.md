@@ -1,34 +1,59 @@
-# Agent Loom — Plugin tools and artifact handoffs for AI agents
+# Agent Loom — Minimal Agent governance runtime
 
-**A TypeScript CLI and SDK for AI agents to discover and invoke plugin capabilities,
-reuse artifacts across sessions, and inspect provenance and failures.**
+**Agent Loom controls when selected Agent work may proceed based on declared evidence.**
 
-Agent Loom gives an agent structured answers to: What can I call? What inputs are
-missing? Which artifact did this run use? What outcome is confirmed?
-The agent chooses the next action; Loom manages the selected execution and its facts.
+Models choose work; domain Plugins produce and verify facts. Loom records who produced
+an Artifact, which exact evidence a consumer accepted, and what execution outcome is
+durably confirmed. Its core concepts are Task, Run, Artifact, Requirement and Consumption.
 
-[User manual / 使用手册](manual/README.md) · [Download alpha](https://github.com/tgwrite/Agent_Loom/releases) ·
+[User manual / 使用手册](manual/README.md) · [Install local candidate](manual/INSTALL.md) ·
 [中文介绍](README.zh-CN.md) · [Agent reading map](llms.txt)
 
-## What it provides
+## The governance loop
 
-| Interface | Purpose |
+| Concept | Meaning |
 | --- | --- |
-| Discover / Describe | Find callable entries and read their input/output contracts |
-| Check | Inspect missing inputs and declared native prerequisites |
-| Invoke | Execute an explicitly selected entry |
-| Inspect | Query outcomes, artifact provenance, consumption and failures |
+| Task | A fixed governance context and Application snapshot |
+| Run | One explicitly selected execution; called Session in the CLI and stored records |
+| Artifact | A result with producer/Run identity, payload reference and digest |
+| Requirement | Evidence a Run needs, optionally from a specified producer |
+| Consumption | A consumer accepted an exact Artifact and digest during initialization |
 
-A Task links multiple Sessions. Each Session selects one primary domain Plugin and
-optional aspects. Consumers receive artifact references and verify inputs before
-successful consumption is recorded. Plugins retain their domain tools and policy.
+`Requirements → unique evidence → consumer initialization → recorded consumption → execution`
+
+For example, an author publishes a result and a verifier publishes a Proof Artifact.
+A consumer Run requires both, with the proof's `producer_plugin_id` set to that
+verifier. Missing evidence blocks execution; ambiguous evidence requires an explicit
+binding. The consumer checks the proof's subject, digest and verdict before Loom
+records consumption. `assertion.status` is a producer claim, not Loom's verdict.
+See the [result-and-proof recipe](manual/ADAPTER_API.md#require-a-result-and-independent-proof).
+
+Each Run has at most one primary domain Plugin and optional aspects. The model
+chooses work; Plugins retain domain tools, guards and verification. Discover,
+Describe and Check help callers inspect declarations. Invoke rechecks evidence;
+a successful Check is not a reservation or permission to bypass initialization.
 
 ## Install and use
 
-**Current release: 0.1.0-alpha.7.** Download the precompiled `.tgz`, `SHA256SUMS` and
-installation instructions from [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
+**Development candidate: 0.2.0-alpha.1 (unreleased).** Build a local archive with
+`npm ci` and `npm run package:local`. See [installation](manual/INSTALL.md) for `.tgz`
+installation and [migration](manual/AGENT_GUIDE.md#compatibility-and-migration) before upgrading.
 Requires Node.js >=24.12.0 and npm; native plugins may require a newer Node version.
 No npm registry release is available.
+
+To exercise the source checkout without native dependencies:
+
+```sh
+npm ci
+npm run check
+npm run demo:agent
+npm run package:local
+```
+
+The demo uses a synthetic Host and no model. The packaging command prints the local
+archive path and writes its checksum alongside it. After installing the archive,
+follow [the first Task walkthrough](manual/START_HERE.md#3-check-the-complete-lifecycle-without-native-dependencies)
+to observe a missing-evidence blocker, produce an Artifact, and inspect its consumption.
 
 Start with the **[user manual](manual/README.md)**:
 
@@ -45,11 +70,16 @@ require reading framework or test implementations to infer integration steps.
 ## Status and scope
 
 Development preview: Core, CLI/SDK and the Pi application host are implemented.
-Complete v0.1 and independent Agent experience acceptance remain pending. Pi is the
-current runtime integration; Core stays independent of Pi.
+Real Plugin compatibility and independent Agent experience acceptance remain pending.
+Pi is the current runtime integration; Core stays independent of Pi.
 
-Artifact dependencies do not schedule execution. Completed execution does not certify
-business acceptance, and unknown outcomes do not establish safe retry. There is no
+Requirements do not schedule execution. Missing evidence yields `PreconditionNotSatisfied`;
+ambiguous evidence yields `BindingConflict`. Proofs are ordinary Artifacts whose exact
+subjects and verdicts the consumer verifies. `assertion.status` is a producer claim.
+
+Loom governs execution through trusted Host entrypoints; it does not constrain code
+that bypasses them or enforce permissions. Task schema 3 rejects older stores without
+rewriting their history. Completed execution does not certify domain correctness, and unknown outcomes do not establish safe retry. There is no
 workflow planner, automatic retry, database or malicious-code sandbox. Synthetic
 examples do not establish real plugin compatibility or production readiness.
 

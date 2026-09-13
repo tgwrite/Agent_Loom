@@ -77,7 +77,7 @@ export function webAdapters(config) {
             content_type: snapshot.content_type, truncated: false,
             markdown: { path: rel(root, source), sha256: sha256(await readFile(source)), bytes: Buffer.byteLength(snapshot.body) },
             native_result: { path: rel(root, result), sha256: sha256(await readFile(result)) } });
-          return [{ type: 'web.source', version: '1', path: rel(root, handoff), verification_status: 'READY' }];
+          return [{ type: 'web.source', version: '1', path: rel(root, handoff), assertion_status: 'READY' }];
         }
         const scaffold = results.filter(e => e.toolName === 'scaffold_artifact' && !e.isError).at(-1)?.result?.details;
         const exported = results.filter(e => e.toolName === 'export_artifact' && !e.isError).at(-1)?.result?.details;
@@ -90,7 +90,7 @@ export function webAdapters(config) {
         await jsonWrite(join(sessionRoot, 'delivery.json'), { schema_version: 'loom-web-report-v1',
           source_artifact_id: context.plan.artifacts[0].id, source_sha256: context.plan.artifacts[0].sha256,
           native_artifact_id: scaffold.id, native_export_sha256: sha256(bytes), report_sha256: sha256(bytes), report_path: rel(root, report) });
-        return [{ type: 'web.report', version: '1', path: rel(root, report), verification_status: 'COMPLETED' }];
+        return [{ type: 'web.report', version: '1', path: rel(root, report), assertion_status: 'COMPLETED' }];
       } catch (error) {
         await writeFile(join(sessionRoot, 'domain-failure.local.txt'), String(error?.stack ?? error));
         throw error;

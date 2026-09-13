@@ -14,7 +14,7 @@ substitute an unrelated demo or relabel partial execution as complete integratio
 | Host import/export readiness failure | Check the saved Host location, native dependencies and `createSessionHost` / `validateNativeApplication` exports |
 | SDK, entry or resource readiness failure | Match the pinned Pi version and each documented native entry/resource; do not disable a check |
 | Preflight passes, Invoke fails before domain execution | Model configuration, authentication or adapter factories may still be untested; preflight did not call them |
-| `MISSING_DEPENDENCY` / `PreconditionNotSatisfied` | Produce or select a verified Artifact in this Task explicitly; no producer will be scheduled |
+| `MISSING_DEPENDENCY` / `PreconditionNotSatisfied` | Produce or select an Artifact satisfying the declared type/version/producer/assertion in this Task; no producer is scheduled |
 | `AMBIGUOUS_BINDING` / `BindingConflict` | Select the intended artifact ID and bind it through the requirement's input name |
 | Task creation says name already registered | Use a fresh Task name or the intended project-local `LOOM_STATE_DIR`; another root alone does not bypass the locator index |
 | `REQUEST_REJECTED` / `InvalidArguments` | Check the Describe schema, Task/entry IDs, named input keys and supported instruction/data mapping |
@@ -55,17 +55,16 @@ are needed; it can include request content. These commands do not retry a Sessio
 | `consumed` | The accepted artifact ID/digest and producer/consumer identity after initialization succeeded |
 | `artifacts` | Indexed outputs with provenance; open the exact referenced Task-relative file for domain validation |
 | `participants` / `aspect_failures` | Domain and aspect observations can differ; `not-observed` is not success |
-| `business_acceptance` | Remains `not-evaluated`; application-defined references are evidence to inspect, not a Loom verdict |
 
 Publication status such as READY or COMPLETED is assigned by the domain adapter.
 The framework checks provenance and files, not arbitrary business claims. Validate
 all required outputs using their respective plugin contracts.
 
-## Diagnostics and summary additions in alpha.7
+## Execution phases and summary evidence
 
-The fields in this section are available in alpha.7. Existing alpha.6 installations
-and historical records may omit
-them; absence does not establish a phase or a Plugin origin.
+These diagnostic fields remain available in v0.2. Optional observations may be absent;
+absence does not establish a phase or a Plugin origin. Old Task schemas require
+explicit migration as described in the compatibility chapter.
 
 Safe `diagnostic.phase` identifies the Host operation that failed:
 `host-validation`, `host-launch`, `configuration`, `adapter-creation`,
@@ -88,7 +87,7 @@ A later disposal error does not replace an earlier shutdown error; required
 governance storage failure remains fatal.
 
 `task inspect --summary --json` now includes each Session's `execution`,
-`observation`, `participants`, `diagnostic` and `business_acceptance` references,
+`observation`, `participants`, `diagnostic` and ordinary Artifact references,
 using the same projection as Agent Inspect. The existing `status` field remains
 the stored status for compatibility: use `execution.status` and
 `observation.outcome_confirmed` when assessing the outcome. Text summaries show
@@ -101,6 +100,20 @@ hash its current bytes and compare it with the publication and accepted input
 digest. Inspection reports recorded evidence; it does not rehash payload files or
 perform business verification. These queries do not invoke a Session.
 
+## Evidence blockers
+
+| Observation | What to inspect |
+| --- | --- |
+| Artifact exists, but Check reports `MISSING_DEPENDENCY` | Compare type, version, producer Plugin ID, optional assertion and any identity pin with Describe's `inputs` |
+| More than one matching Artifact | Bind an intended Artifact by input name; do not remove the producer constraint or assume newest means correct |
+| Check passes, initialization fails | Inspect the exact payload bytes and proof subject/digest/verdict; Check does not validate domain truth |
+| Proof or producer is absent | Obtain the required evidence explicitly; no producer or verifier is scheduled |
+| Consumption exists, Run later failed | The initializer accepted the evidence before a later failure; consumption is not a completion verdict |
+
+For a proof and result pair, the proof file's SHA-256 and its claimed subject digest
+answer different questions. The former identifies the proof bytes; the latter must
+match the exact selected result. See the [proof recipe](ADAPTER_API.md#require-a-result-and-independent-proof).
+
 ## Retrying and upgrading
 
 A repeated request ID starts a new attempt; it is not an idempotency key. Repeated
@@ -112,7 +125,12 @@ manual lock removal. Removing the lock alone does not settle an unknown Session.
 Tasks retain Application snapshots. Use a fresh Task for a changed definition;
 do not rewrite a Task's stored definition to make new code fit. A snapshot does not
 freeze the executable Host or npm dependencies, so pin and retain them with the
-application. Read version compatibility notes before changing an existing install.
+application. Read [compatibility and migration](AGENT_GUIDE.md#compatibility-and-migration)
+before changing an existing install. Schema 2 Tasks are rejected as unsupported
+records, and `.agent-container/` triggers `LegacyStoreDetected`. Keep the old data
+intact and inspect it with its matching old installation. A fresh Task with a migrated
+declaration is the supported new-version starting point; changing a stored schema
+number alone is not a migration.
 
 ## Report an actionable documentation blocker
 

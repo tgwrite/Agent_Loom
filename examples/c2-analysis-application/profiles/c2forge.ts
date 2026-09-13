@@ -1,4 +1,4 @@
-import type { SessionProfile } from '../../../packages/container-core/src/index.ts';
+import type { SessionProfile } from '../../../packages/container-core/src/internal.ts';
 
 export const c2forgeProfile: SessionProfile = {
   id: 'c2forge',

@@ -1,5 +1,5 @@
 import { decoderHandoffRequirement } from '../../../adapters/c2decoder-pi/src/index.ts';
-import type { SessionProfile } from '../../../packages/container-core/src/index.ts';
+import type { SessionProfile } from '../../../packages/container-core/src/internal.ts';
 
 export const c2decoderProfile: SessionProfile = {
   id: 'c2decoder',

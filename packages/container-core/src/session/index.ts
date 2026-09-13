@@ -1,10 +1,11 @@
 import type { ActorRef, RuntimeRef } from '../actor/index.ts';
 import type { ArtifactRequirement } from '../artifact/index.ts';
 import type { FailureRecord } from '../failure/index.ts';
-import type { AgentRequest, EntryContract } from '../invocation.ts';
+import type { AgentRequest, EntryContract, EntryPresentation } from '../invocation.ts';
 
 export interface SessionProfile {
   entry?: EntryContract;
+  presentation?: EntryPresentation;
   id: string;
   primary?: string;
   aspects: readonly string[];
@@ -38,3 +39,7 @@ export interface ResolvedInput {
   artifact_id: string;
   sha256: string;
 }
+
+/** Public terminology; Session remains the persisted implementation name. */
+export type RunProfile = SessionProfile;
+export type RunRecord = SessionRunRecord;

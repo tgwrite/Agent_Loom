@@ -2,8 +2,7 @@ import { ContainerFailure } from '../failure/index.ts';
 import type { PluginDescriptor } from '../plugin/index.ts';
 import type { SessionProfile } from '../session/index.ts';
 import { taskRelativePath } from '../paths.ts';
-import { validateData, validateDataSchema } from '../data-schema.ts';
-import { jsonValue } from '../record-validation.ts';
+import { validateDataSchema } from '../data-schema.ts';
 
 export interface ApplicationDefinition {
   id: string;
@@ -43,19 +42,6 @@ function selectProfile(application: ApplicationDefinition, profileId: string): {
     }
     return plugin;
   });
-  const bindings = new Set<string>();
-  for (const plugin of plugins) {
-    for (const capability of plugin.capabilities) {
-      if (capability.provider !== plugin.id) {
-        throw new ContainerFailure('InvalidDefinition', 'Capability provider must match its Plugin.');
-      }
-      const key = JSON.stringify([capability.id, capability.version]);
-      if (bindings.has(key)) {
-        throw new ContainerFailure('BindingConflict', 'Capability has multiple provider bindings.');
-      }
-      bindings.add(key);
-    }
-  }
   return { profile, plugins };
 }
 
@@ -102,20 +88,7 @@ export function validateApplication(value: unknown): asserts value is Applicatio
     id(plugin.native.runtime, `${path}.native.runtime`);
     id(plugin.native.binding_key, `${path}.native.binding_key`);
     definition(plugin.native.runtime === value.runtime.id, `${path}.native.runtime`, 'runtime-mismatch');
-    definition(Array.isArray(plugin.capabilities), `${path}.capabilities`, 'expected-array');
-    for (const [capabilityIndex, capability] of plugin.capabilities.entries()) {
-      const capPath = `${path}.capabilities[${capabilityIndex}]`;
-      object(capability, capPath);
-      nonempty(capability.id, `${capPath}.id`);
-      nonempty(capability.version, `${capPath}.version`);
-      definition(capability.provider === plugin.id, `${capPath}.provider`, 'provider-mismatch');
-      definition(Array.isArray(capability.requirements), `${capPath}.requirements`, 'expected-array');
-      for (const [requirementIndex, requirement] of capability.requirements.entries()) {
-        const reqPath = `${capPath}.requirements[${requirementIndex}]`;
-        contract(requirement, reqPath);
-        nonempty(requirement.verification_status, `${reqPath}.verification_status`);
-      }
-    }
+    definition(plugin.capabilities === undefined, `${path}.capabilities`, 'removed-in-v02');
     if (plugin.produces !== undefined) {
       definition(Array.isArray(plugin.produces), `${path}.produces`, 'expected-array');
       for (const [outputIndex, output] of plugin.produces.entries()) contract(output, `${path}.produces[${outputIndex}]`);
@@ -129,47 +102,12 @@ export function validateApplication(value: unknown): asserts value is Applicatio
       const entryPath = `${path}.entry`;
       object(profile.entry, entryPath);
       definition(typeof profile.entry.id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(profile.entry.id), `${entryPath}.id`, 'invalid-identifier');
-      nonempty(profile.entry.purpose, `${entryPath}.purpose`);
-      definition(profile.entry.implementation === 'native' || profile.entry.implementation === 'synthetic', `${entryPath}.implementation`, 'expected-native-or-synthetic');
+      definition(Object.keys(profile.entry).every(key => ['id', 'request_mapping', 'data_schema', 'data_required'].includes(key)), entryPath, 'unknown-entry-field');
       definition(profile.entry.request_mapping === undefined || profile.entry.request_mapping === 'v1', `${entryPath}.request_mapping`, 'unsupported-value');
       if (profile.entry.data_required !== undefined) definition(typeof profile.entry.data_required === 'boolean', `${entryPath}.data_required`, 'expected-boolean');
-      if (profile.entry.data_schema !== undefined || profile.entry.data_required || profile.entry.data_examples !== undefined)
+      if (profile.entry.data_schema !== undefined || profile.entry.data_required)
         definition(profile.entry.request_mapping === 'v1', `${entryPath}.request_mapping`, 'data-contract-requires-v1');
       if (profile.entry.data_schema !== undefined) validateDataSchema(profile.entry.data_schema, `${entryPath}.data_schema`);
-      if (profile.entry.data_examples !== undefined) {
-        definition(Array.isArray(profile.entry.data_examples), `${entryPath}.data_examples`, 'expected-array');
-        for (const [exampleIndex, example] of profile.entry.data_examples.entries()) {
-          try {
-            jsonValue(example);
-            if (profile.entry.data_schema !== undefined) validateData(profile.entry.data_schema, example);
-          } catch { definition(false, `${entryPath}.data_examples[${exampleIndex}]`, 'example-does-not-match-data-contract'); }
-        }
-      }
-      if (profile.entry.acceptance_artifacts !== undefined) {
-        definition(Array.isArray(profile.entry.acceptance_artifacts), `${entryPath}.acceptance_artifacts`, 'expected-array');
-        for (const [evidenceIndex, evidence] of profile.entry.acceptance_artifacts.entries()) {
-          const evidencePath = `${entryPath}.acceptance_artifacts[${evidenceIndex}]`;
-          contract(evidence, evidencePath);
-          id(evidence.producer_plugin_id, `${evidencePath}.producer_plugin_id`);
-        }
-      }
-      definition(Array.isArray(profile.entry.effect_declarations), `${entryPath}.effect_declarations`, 'expected-array');
-      for (const [effectIndex, effect] of profile.entry.effect_declarations.entries()) nonempty(effect, `${entryPath}.effect_declarations[${effectIndex}]`);
-      if (profile.entry.name !== undefined) nonempty(profile.entry.name, `${entryPath}.name`);
-      if (profile.entry.tags !== undefined) {
-        definition(Array.isArray(profile.entry.tags), `${entryPath}.tags`, 'expected-array');
-        for (const [tagIndex, tag] of profile.entry.tags.entries()) nonempty(tag, `${entryPath}.tags[${tagIndex}]`);
-      }
-      if (profile.entry.examples !== undefined) {
-        definition(Array.isArray(profile.entry.examples), `${entryPath}.examples`, 'expected-array');
-        for (const [exampleIndex, example] of profile.entry.examples.entries()) {
-          const examplePath = `${entryPath}.examples[${exampleIndex}]`;
-          object(example, examplePath);
-          nonempty(example.instruction, `${examplePath}.instruction`);
-          nonempty(example.explanation, `${examplePath}.explanation`);
-          definition(typeof example.valid === 'boolean', `${examplePath}.valid`, 'expected-boolean');
-        }
-      }
     }
     if (profile.primary !== undefined) id(profile.primary, `${path}.primary`);
     definition(Array.isArray(profile.aspects), `${path}.aspects`, 'expected-array');
@@ -183,7 +121,9 @@ export function validateApplication(value: unknown): asserts value is Applicatio
     for (const [requirementIndex, requirement] of profile.requirements.entries()) {
       const reqPath = `${path}.requirements[${requirementIndex}]`;
       contract(requirement, reqPath);
-      nonempty(requirement.verification_status, `${reqPath}.verification_status`);
+      definition(Object.keys(requirement).every(key => ['type', 'version', 'input_name', 'assertion_status', 'producer_plugin_id', 'artifact_id'].includes(key)), reqPath, 'unknown-requirement-field');
+      if (requirement.assertion_status !== undefined) nonempty(requirement.assertion_status, `${reqPath}.assertion_status`);
+      if (requirement.producer_plugin_id !== undefined) id(requirement.producer_plugin_id, `${reqPath}.producer_plugin_id`);
       if (requirement.artifact_id !== undefined) id(requirement.artifact_id, `${reqPath}.artifact_id`);
       if (requirement.input_name !== undefined) id(requirement.input_name, `${reqPath}.input_name`);
     }
@@ -194,22 +134,13 @@ export function validateApplication(value: unknown): asserts value is Applicatio
   for (const [index, profile] of application.profiles.entries()) {
     const names = profile.requirements.map(r => r.input_name).filter(name => name !== undefined);
     definition(new Set(names).size === names.length, `profiles[${index}].requirements`, 'duplicate-input-name');
-    for (const [evidenceIndex, evidence] of (profile.entry?.acceptance_artifacts ?? []).entries()) {
-      const producer = application.plugins.find(plugin => plugin.id === evidence.producer_plugin_id);
-      definition([profile.primary, ...profile.aspects].includes(evidence.producer_plugin_id)
-        && producer?.produces?.some(output => output.type === evidence.type && output.version === evidence.version),
-      `profiles[${index}].entry.acceptance_artifacts[${evidenceIndex}]`, 'expected-selected-producer-contract');
-    }
   }
-  const produced = new Set(application.plugins.flatMap((plugin) =>
-    (plugin.produces ?? []).map((item) => JSON.stringify([item.type, item.version]))));
   for (const profile of application.profiles) selectProfile(application, profile.id);
-  const requirements = [
-    ...application.profiles.flatMap((profile) => profile.requirements),
-    ...application.plugins.flatMap((plugin) => plugin.capabilities.flatMap((capability) => capability.requirements)),
-  ];
+  const requirements = application.profiles.flatMap(profile => profile.requirements);
   for (const requirement of requirements) {
-    if (!produced.has(JSON.stringify([requirement.type, requirement.version]))) {
+    if (!application.plugins.some(plugin =>
+      (requirement.producer_plugin_id === undefined || plugin.id === requirement.producer_plugin_id)
+      && plugin.produces?.some(output => output.type === requirement.type && output.version === requirement.version))) {
       throw new ContainerFailure('InvalidDefinition', 'Artifact requirement has no declared producer.', {
         contract: { type: requirement.type, version: requirement.version },
       });

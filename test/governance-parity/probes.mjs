@@ -5,16 +5,16 @@ import { randomUUID } from 'node:crypto';
 export const stamp = '2026-01-01T00:00:00.000Z';
 export const application = { id: 'parity', version: '1', runtime: { id: 'pi', version: 'test' },
   plugins: ['domain', 'observer', 'audit'].map((id, index) => ({ id, role: index ? 'aspect' : 'domain',
-    native: { runtime: 'pi', binding_key: id }, capabilities: [], produces: [{ type: index ? 'review' : 'source', version: '1' }] })),
+    native: { runtime: 'pi', binding_key: id }, produces: [{ type: index ? 'review' : 'source', version: '1' }] })),
   profiles: [{ id: 'producer', primary: 'domain', aspects: ['observer', 'audit'], requirements: [] },
-    { id: 'consumer', primary: 'domain', aspects: ['observer', 'audit'], workspace: 'consumer', requirements: [{ type: 'source', version: '1', verification_status: 'READY' }] }] };
-export const task = (id = 'task-one') => ({ schema_version: 2, id, application_id: 'parity', application: structuredClone(application), title: 'Synthetic parity', created_at: stamp });
+    { id: 'consumer', primary: 'domain', aspects: ['observer', 'audit'], workspace: 'consumer', requirements: [{ type: 'source', version: '1', assertion_status: 'READY' }] }] };
+export const task = (id = 'task-one') => ({ schema_version: 3, id, application_id: 'parity', application: structuredClone(application), title: 'Synthetic parity', created_at: stamp });
 export const session = (taskId = 'task-one', id = 'producer') => ({ id, task_id: taskId, profile_id: 'producer', workspace: '.',
   primary_plugin_id: 'domain', aspect_plugin_ids: ['observer', 'audit'], plugin_ids: ['domain', 'observer', 'audit'],
   actor: { id: 'local-operator' }, runtime: { id: 'pi', name: 'pi', version: 'test' }, runtime_session_id: `native-${id}`, status: 'running', started_at: stamp });
 export const artifact = (taskId = 'task-one', id = 'artifact-one') => ({ id, task_id: taskId, type: 'source', version: '1',
-  producer: { plugin_id: 'domain', capability_id: 'publish', session_id: 'producer' }, executor: { actor_id: 'local-operator', runtime_id: 'pi' },
-  producer_phase: 'domain-run', native_runtime_session_id: 'native-producer', verification: { status: 'READY' },
+  producer: { plugin_id: 'domain', session_id: 'producer' }, executor: { actor_id: 'local-operator', runtime_id: 'pi' },
+  producer_phase: 'domain-run', native_runtime_session_id: 'native-producer', assertion: { status: 'READY' },
   payload_ref: { kind: 'file', path: 'payload.txt' }, sha256: 'a'.repeat(64), created_at: stamp });
 export const failure = plugin => ({ code: 'NativeAspectFailed', message: 'PRIVATE_OBSERVER_CANARY', source: plugin, timestamp: stamp });
 export const barrier = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };

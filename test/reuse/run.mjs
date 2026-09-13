@@ -124,7 +124,7 @@ async function scenario(arm, reversed, kind) {
       }
       if (artifact.type === 'audit.session-summary') {
         assert.equal(artifact.producer.plugin_id, 'session-audit');
-        assert.equal(artifact.verification.status, 'COMPLETED');
+        assert.equal(artifact.assertion.status, 'COMPLETED');
         assert.equal(artifact.consumers.length, 0);
         const audit = await readJson(join(task.root, artifact.payload_ref.path));
         assert.equal(audit.native_session_id, session.runtime_session_id);

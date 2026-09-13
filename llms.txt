@@ -1,22 +1,23 @@
 # Agent Loom
 
-> TypeScript CLI and SDK for AI agents to discover and invoke plugin capabilities,
-> reuse artifact references across sessions, and inspect provenance and failures.
+> Minimal Agent governance runtime: declared evidence gates execution; provenance,
+> exact consumption and durable execution facts stay outside model authority.
 
 Canonical repository: https://github.com/tgwrite/Agent_Loom
-Current package: 0.1.0-alpha.7 development preview; no npm registry release.
+Documentation target: 0.2.0-alpha.1 unreleased development candidate; build locally.
 Runtime integration: Pi. Core remains independent of Pi.
 Requirements: Node.js >=24.12.0, npm, ESM. Native dependencies may require more.
 
 ## User manual: follow this path
 
 - [Manual index](manual/README.md): 使用手册入口、阅读顺序与验证范围。
-- [Install](manual/INSTALL.md): Download, verify and install the archive locally.
+- [Install](manual/INSTALL.md): Build, verify and install the local candidate archive.
 - [Getting started](manual/START_HERE.md): Choose caller/developer/adapter work; run a complete synthetic lifecycle.
 - [Call an application](manual/AGENT_API.md): CLI/SDK sequence, request fields, Host binding and artifact selection.
 - [Native integration tutorial](manual/NATIVE_INTEGRATION.md): Every file for a real Pi application; default-model setup, native tool execution and output validation.
 - [Application and adapter API](manual/ADAPTER_API.md): Descriptors, bindings, hook arguments/returns, artifact inputs and plugin-specific prerequisites.
 - [Troubleshooting](manual/TROUBLESHOOTING.md): Diagnose by layer; inspect execution, consumption, aspects and unknown outcomes.
+- [Result and independent proof](manual/ADAPTER_API.md#require-a-result-and-independent-proof): Producer constraints and exact subject/digest validation.
 - [Advanced contracts](manual/AGENT_GUIDE.md): Schemas, receipts, cooperative locks and version compatibility.
 
 Application users should not need to read framework or test implementation source.
@@ -27,7 +28,7 @@ Loom does not infer undocumented native entries or provide adapters for every pa
 
 - [Overview](README.md): Scope and project identity.
 - [Chinese overview](README.zh-CN.md): 中文简介。
-- [Downloads](https://github.com/tgwrite/Agent_Loom/releases): Precompiled archive, checksums and installation instructions.
+- [Local installation](manual/INSTALL.md): Candidate archive, checksum and installation instructions.
 - [Contributing](CONTRIBUTING.md): Source checkout and development checks.
 - [Contributor rules](AGENTS.md): Development, privacy and publication instructions.
 - [License](LICENSE): Apache License 2.0.

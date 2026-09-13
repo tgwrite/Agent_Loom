@@ -33,7 +33,7 @@ export async function containedFile(root, path) {
 export async function acceptHandoff(root, artifact) {
   assert.equal(artifact.type, 'web.source');
   assert.equal(artifact.version, '1');
-  assert.equal(artifact.verification.status, 'READY');
+  assert.equal(artifact.assertion.status, 'READY');
   assert.equal(artifact.producer.plugin_id, 'web-source');
   assert.equal(artifact.payload_ref.kind, 'file');
   const bytes = await readFile(await containedFile(root, artifact.payload_ref.path));

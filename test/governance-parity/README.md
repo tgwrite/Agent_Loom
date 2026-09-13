@@ -74,3 +74,7 @@ Their byte hashes are included in the campaign freeze.
 The control supports the bounded experimental surface, not every Loom public API.
 The storage fault model is a live process with a single writer and failing or
 delayed file operations. There is no power-loss, multi-writer or recovery claim.
+
+The current harness targets Task schema 3. G15 now rejects pre-v0.2 Artifact fields
+without rewriting their bytes. Earlier result reports describe the earlier contract;
+they do not certify v0.2 native compatibility or acceptance.

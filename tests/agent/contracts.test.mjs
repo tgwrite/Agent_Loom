@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import * as core from '../../dist/packages/container-core/src/index.js';
+import * as core from '../../dist/packages/container-core/src/internal.js';
 import { connectLoom, createRequest } from '../../dist/packages/container-core/src/agent.js';
 
 async function fixture(t, mode = '', names = ['source']) {
@@ -12,15 +12,20 @@ async function fixture(t, mode = '', names = ['source']) {
   t.after(() => rm(root, { recursive: true, force: true }));
   const application = { id: 'synthetic-app', version: '1', runtime: { id: 'synthetic', version: '1' },
     plugins: [{ id: 'domain', role: 'domain', native: { runtime: 'synthetic', binding_key: 'domain' },
-      capabilities: [], produces: [{ type: 'sample', version: '1' }] }],
+       produces: [{ type: 'sample', version: '1' }] }],
     profiles: [{ id: 'producer', primary: 'domain', aspects: [], requirements: [] },
       { id: 'consumer', primary: 'domain', aspects: [], requirements: names.map(input_name =>
-        ({ input_name, type: 'sample', version: '1', verification_status: 'READY' })) }] };
-  const store = await core.LocalTaskStore.create(root, { schema_version: 2, id: 'task-one', application_id: application.id,
+        ({ input_name, type: 'sample', version: '1', assertion_status: 'READY' })) }] };
+  const store = await core.LocalTaskStore.create(root, { schema_version: 3, id: 'task-one', application_id: application.id,
     application, title: 'Synthetic contract Task', created_at: new Date().toISOString() });
+  // Inject storage failures through the internal fixture, outside the public Host facade.
+  const originalOpen = core.LocalTaskStore.open.bind(core.LocalTaskStore);
+  t.mock.method(core.LocalTaskStore, 'open', async path => path === store.taskRoot ? store : originalOpen(path));
+
   const state = { mode, runs: 0, native: 0 };
   const rejected = core.registerSafeDiagnostics('domain', ['DOMAIN_REJECTED']);
-  const binding = { actor: { id: 'synthetic-actor' }, createHost({ store: active }) {
+  const binding = { actor: { id: 'synthetic-actor' }, createHost() {
+    const active = store;
     if (state.mode === 'once') {
       const append = active.appendEvent.bind(active); let injected = false;
       active.appendEvent = async event => {
@@ -66,8 +71,8 @@ async function fixture(t, mode = '', names = ['source']) {
       primary_plugin_id: 'domain', aspect_plugin_ids: [], plugin_ids: ['domain'], actor: binding.actor,
       runtime: { id: 'synthetic', name: 'synthetic', version: '1' }, status: 'running', started_at: stamp });
     await store.publishArtifact({ id, task_id: store.task.id, type: 'sample', version: '1',
-      producer: { session_id: `producer-${id}`, plugin_id: 'domain', capability_id: 'publish' },
-      executor: { actor_id: binding.actor.id, runtime_id: 'synthetic' }, verification: { status: 'READY' },
+      producer: { session_id: `producer-${id}`, plugin_id: 'domain', },
+      executor: { actor_id: binding.actor.id, runtime_id: 'synthetic' }, assertion: { status: 'READY' },
       payload_ref: { kind: 'file', path: 'synthetic.json' }, sha256: 'a'.repeat(64), created_at: stamp });
     await store.settleSession(`producer-${id}`, 'completed', stamp);
   }

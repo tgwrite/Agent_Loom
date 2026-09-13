@@ -20,7 +20,7 @@ npx --no-install loom task create --app ./application.mjs --root ./text-task --n
 
 Use a fresh Task directory; skip Task creation when intentionally inspecting an
 existing Task. Describe's `request_schema` defines the envelope and data shape.
-Its `inputs`, `participants`, `data_examples` and `effect_declarations` describe the
+Its `inputs`, `participants`, presentation metadata and `data_examples` describe the
 operation. The application still owns semantic validation and native prerequisites.
 
 ## Request JSON
@@ -65,6 +65,31 @@ Invoke success. Add `--native-preflight` to Check only when native resource load
 is intended. Model access and business quality are separate from resource readiness.
 The CLI reuses the saved Application Host. All writers must cooperate with exclusive
 ownership; do not run legacy Session writes concurrently with exclusive Invoke.
+
+## Create a Task through the SDK
+
+For an Application whose initialization needs no CLI Task input file, create a fresh
+Task directly. Save this alongside the Application module from the native tutorial:
+
+```js
+import { createTask, connectLoom } from 'agent-loom';
+import { application } from './application.mjs';
+import { createSessionHost } from './host.mjs';
+
+const taskRoot = './sdk-text-task';
+const task = await createTask({ taskRoot, taskId: 'sdk-text-task', application,
+  title: 'Text normalization' });
+const loom = await connectLoom({ taskRoot, taskId: task.id, writer_policy: 'exclusive',
+  host: { actor: { id: 'application-executor' }, createHost: createSessionHost } });
+console.log(JSON.stringify(loom.describe('text.normalize')));
+```
+
+`createTask` validates and snapshots the definition and returns a TaskRecord with
+schema 3. Omit `taskId` to generate an ID. Existing Task directories are never
+overwritten. This creates no Run. The SDK does not register a CLI locator, save a
+Host binding, or call the Application module's `validateTaskInput`. For applications
+that require the CLI `--input` snapshot, use `loom task create --input` first.
+All later SDK requests must use the returned Task ID.
 
 ## SDK equivalent
 
@@ -114,7 +139,8 @@ the consumer's requirement, and pass it by the declared input name. For example:
 
 ```js
 const selected = producerReceipt.artifacts.filter(item =>
-  item.type === 'text.result' && item.version === '1');
+  item.type === 'text.result' && item.version === '1'
+  && item.producer_plugin_id === 'text-domain');
 if (selected.length !== 1) throw new Error('Select one intended producer output');
 const request = { ...createRequest(taskId, consumerEntryId),
   inputs: { source: { artifact_id: selected[0].id } } };
@@ -126,6 +152,8 @@ For a complete two-Session runnable lifecycle, use the synthetic example in
 [Getting started](START_HERE.md#3-check-the-complete-lifecycle-without-native-dependencies).
 The consumer adapter verifies the selected bytes in `initialize` before consumption
 is recorded. A READY label alone does not replace that verification.
+For independently verified evidence, bind result and proof separately; see the
+[result-and-proof recipe](ADAPTER_API.md#require-a-result-and-independent-proof).
 
 ## Expected outcomes
 

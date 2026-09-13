@@ -1,10 +1,10 @@
-import type { ArtifactRequirement, PluginDescriptor } from '../../../packages/container-core/src/index.ts';
+import type { ArtifactRequirement, PluginDescriptor } from '../../../packages/container-core/src/internal.ts';
 
 export const c2decoder: PluginDescriptor = {
   id: 'c2decoder',
   role: 'domain',
   native: { runtime: 'pi', binding_key: 'c2decoder' },
-  capabilities: [],
+
   produces: [],
 };
 
@@ -12,5 +12,5 @@ export const c2decoder: PluginDescriptor = {
 export const decoderHandoffRequirement: ArtifactRequirement = {
   type: 'c2forge.decoder-handoff',
   version: '3',
-  verification_status: 'READY',
+  assertion_status: 'READY',
 };

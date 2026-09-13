@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { historyFixture, measureHistory } from '../../scripts/benchmark-inspection.mjs';
-import { inspectTask } from '../../dist/packages/container-core/src/index.js';
+import { inspectTask } from '../../dist/packages/container-core/src/internal.js';
 
 test('one inspection reads each Session once without caching across queries', async t => {
   const measured = await measureHistory(50);

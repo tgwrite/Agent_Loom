@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ContainerFailure, defineApplication, prepareSession, validateApplication } from '../../packages/container-core/src/index.ts';
+import { ContainerFailure, defineApplication, prepareSession, validateApplication } from '../../packages/container-core/src/internal.ts';
 import { c2AnalysisApplication } from '../../examples/c2-analysis-application/application.ts';
 import { fixture, testApplication } from '../helpers.ts';
 
@@ -19,11 +19,11 @@ test('validation checks all Profiles and rejects malformed external definitions'
 });
 
 test('definition diagnostics identify missing entry fields and nested contracts without echoing values', () => {
-  const validEntry = { id: 'sample.run', purpose: 'Synthetic operation', implementation: 'native',
-    request_mapping: 'v1', effect_declarations: [] };
+  const validEntry = { id: 'sample.run',
+    request_mapping: 'v1', };
   const application = (entry: unknown) => ({ ...testApplication,
     profiles: [{ ...testApplication.profiles[0], entry }] });
-  for (const [field, rule] of [['implementation', 'expected-native-or-synthetic'], ['effect_declarations', 'expected-array']]) {
+  for (const [field, rule] of [['id', 'invalid-identifier']]) {
     const entry = { ...validEntry };
     Reflect.deleteProperty(entry, field!);
     assert.throws(() => validateApplication(application(entry)), error => {
@@ -33,10 +33,10 @@ test('definition diagnostics identify missing entry fields and nested contracts 
       return true;
     });
   }
-  const invalid = application({ ...validEntry, implementation: 'synthetic-diagnostic-canary' });
+  const invalid = application({ ...validEntry, request_mapping: 'synthetic-diagnostic-canary' });
   assert.throws(() => validateApplication(invalid), error => {
     assert(error instanceof ContainerFailure);
-    assert.equal(error.details.path, 'profiles[0].entry.implementation');
+    assert.equal(error.details.path, 'profiles[0].entry.request_mapping');
     assert(!JSON.stringify({ message: error.message, details: error.details }).includes('synthetic-diagnostic-canary'));
     return true;
   });

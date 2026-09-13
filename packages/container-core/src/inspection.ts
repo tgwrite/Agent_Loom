@@ -1,5 +1,5 @@
 import type { LocalTaskStore } from './storage/index.ts';
-import { readNativeProvenance } from './artifact/index.ts';
+import { matchesArtifact, readNativeProvenance } from './artifact/index.ts';
 import { readObserverFailure } from './failure/observer.ts';
 import { invocationRequirements } from './invocation.ts';
 import { requireRecord } from './record-validation.ts';
@@ -36,16 +36,13 @@ export async function inspectTask(store: LocalTaskStore) {
           const requirement = requirements[index]!;
           const artifact = byId.get(binding.artifact_id);
           requireRecord(binding.input_name === requirement.input_name && artifact !== undefined
-            && binding.sha256 === artifact.sha256 && artifact.type === requirement.type && artifact.version === requirement.version
-            && artifact.verification.status === requirement.verification_status
-            && (requirement.artifact_id === undefined || requirement.artifact_id === artifact.id),
+            && binding.sha256 === artifact.sha256 && matchesArtifact(artifact, requirement),
           'Recorded input binding does not match its Task facts.');
         }
       }
       const produced = producedBySession.get(session.id) ?? [];
       return {
         ...session,
-        acceptance_artifact_contracts: profiles.get(session.profile_id)?.entry?.acceptance_artifacts ?? [],
         produced,
         consumed: (consumedBySession.get(session.id) ?? []).map(record => ({
           ...record, producer: byId.get(record.artifact_id)!.producer,

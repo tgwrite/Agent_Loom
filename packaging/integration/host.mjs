@@ -25,7 +25,7 @@ export const { createSessionHost, validateNativeApplication } = createPiHostModu
             } else {
               assert.equal(artifacts.length, 1);
               accepted = await readArtifactFile(context, artifacts[0],
-                { ...domain.contract, verification_status: 'READY', producer_plugin_id: 'domain' },
+                { ...domain.contract, assertion_status: 'READY', producer_plugin_id: 'domain' },
                 bytes => domain.parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))));
             }
             await mkdir(context.workspace, { recursive: true });
@@ -36,7 +36,7 @@ export const { createSessionHost, validateNativeApplication } = createPiHostModu
             await writeFile(output, JSON.stringify(producing ? accepted : domain.consume(accepted)), { flag: 'wx' });
             return [{ ...(producing ? domain.contract : { type: `${store.task.application_id}.result`, version: '1' }),
               path: relative(context.task_root, output).replaceAll('\\', '/'),
-              verification_status: producing ? 'READY' : 'COMPLETED' }];
+              assertion_status: producing ? 'READY' : 'COMPLETED' }];
           },
         };
       },

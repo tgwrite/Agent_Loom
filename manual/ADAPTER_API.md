@@ -1,6 +1,6 @@
 # Application and Pi adapter API reference
 
-Public contracts for **Agent Loom 0.1.0-alpha.7**. Start with
+Public contracts for **Agent Loom 0.2.0-alpha.1**. Start with
 [onboarding](START_HERE.md); use the [complete native example](NATIVE_INTEGRATION.md)
 for executable files. This page is a reference, not a request to inspect implementation
 source or installed internal paths.
@@ -9,7 +9,7 @@ source or installed internal paths.
 
 | Import | Relevant exports |
 | --- | --- |
-| `agent-loom` | `LocalTaskStore`, `prepareSession`, `executeSession`, `inspectTask`, `withTaskWriter`, `registerSafeDiagnostics` |
+| `agent-loom` | `createTask`, `connectLoom`, `createRequest`, `defineApplication`, `registerSafeDiagnostics`; governance and Host types |
 | `agent-loom/agent` | `connectLoom`, `createRequest`, `discoverEntries`, `describeEntry`; request/receipt types |
 | `agent-loom/runtime-pi` | `createPiHostModule`, `definePiApplicationModule`, `createPiApplicationHost`, `readTaskInput`, `readArtifactFile`; adapter types |
 
@@ -33,7 +33,7 @@ Export `application` (required), `nativeHost` (for CLI native execution) and opt
 | `validateTaskInput(value)` | Optional exported function, sync or async; throw to reject `--input`. Called with `undefined` if omitted. Its returned value does not normalize the saved input. |
 
 A Plugin descriptor has `id`, `role` (`domain` or `aspect`),
-`native: { runtime: 'pi', binding_key: 'text' }`, `capabilities: []`, and
+`native: { runtime: 'pi', binding_key: 'text' }`, and
 `produces: [{ type: 'text.result', version: '1' }]`. Use `produces: []` if it publishes
 nothing. The `id` identifies the Plugin within this Application; `binding_key`
 selects a registration in the Host. Neither field is an npm package name unless
@@ -48,18 +48,38 @@ For Agent Invoke, provide an `entry` with:
 
 | Field | Contract |
 | --- | --- |
-| `id`, `purpose` | Callable entry ID and its purpose; use the entry ID, not the Profile ID, in Agent requests |
-| `implementation` | `'native'` or `'synthetic'`; do not label a fake SDK native |
-| `effect_declarations` | Array of descriptive strings, e.g. `['task-files-write', 'model-request']`; not enforced permissions |
+| `id` | Callable entry ID; use it in Agent requests |
 | `request_mapping` | `'v1'` if the adapter handles instruction/data; also opt in on the primary registration |
-| `data_schema`, `data_required`, `data_examples` | Optional bounded JSON Schema contract, required-data flag and valid example values |
-| `name`, `tags`, `examples` | Optional discovery metadata |
-| `acceptance_artifacts` | Optional `{ type, version, producer_plugin_id }[]` matching selected Plugins' declared outputs; exposes references, not a business verdict |
+| `data_schema`, `data_required` | Optional bounded JSON Schema and required-data flag |
+
+Optional `profile.presentation` contains purpose, name, tags, implementation kind,
+examples and data_examples. It is convenience metadata outside Core validation.
+For example, keep the invocation contract and its display text separate:
+
+```js
+{
+  id: 'normalize', primary: 'text-domain', aspects: [], requirements: [],
+  entry: { id: 'text.normalize', request_mapping: 'v1' },
+  presentation: { purpose: 'Normalize text', implementation: 'native', tags: ['text'] }
+}
+```
 
 Schema syntax and unsupported features are documented in
 [Business parameters](AGENT_GUIDE.md#business-parameters-before-native-startup).
 An entry with `data_required: true` must use Invoke with data; request-free
 `session start` cannot supply it.
+
+| Requirement field | Meaning |
+| --- | --- |
+| `type`, `version` | Required exact contract match |
+| `producer_plugin_id` | Optional exact producer identity; that Plugin must declare the output contract |
+| `assertion_status` | Optional exact producer-asserted label; omitting it accepts any recorded label |
+| `artifact_id` | Optional exact Artifact identity; a request cannot replace this pin |
+| `input_name` | Optional name for request selection and initializer input lookup |
+
+All specified conditions must match the same Artifact. Without a producer constraint,
+any declared producer of that contract can match. Proof payload semantics remain
+consumer-owned. There is no wildcard version range or automatic newest selection.
 
 ## Host module and registrations
 
@@ -73,7 +93,7 @@ type HostOptions = {
   sdkVersion: string;                    // its installed VERSION
   preflightDirectory: string;            // absolute local directory
   adapters: Record<string, Registration>; // keys match native.binding_key
-  configure(context: { store: LocalTaskStore }):
+  configure(context: { store: HostTaskStore }):
     { settings: Record<string, unknown>; modelRuntime: unknown } |
     Promise<{ settings: Record<string, unknown>; modelRuntime: unknown }>;
   checkLauncher?(): Promise<void>;        // optional, no domain/model execution
@@ -82,7 +102,7 @@ type Registration = {
   entry: string;                         // absolute native extension file
   prompt_paths?: readonly string[];       // absolute template directories
   request_mapping?: 'v1';
-  create?(context: { store: LocalTaskStore; plan: SessionPlan }):
+  create?(context: { store: HostTaskStore; plan: SessionPlan }):
     AdapterHooks | Promise<AdapterHooks>;
 };
 ```
@@ -121,7 +141,7 @@ type Publication = {
   type: string;
   version: string;
   path: string;                  // existing file, relative to Task root
-  verification_status: string;   // domain-assigned, e.g. READY or COMPLETED
+  assertion_status: string;   // domain-assigned, e.g. READY or COMPLETED
 };
 ```
 
@@ -136,7 +156,7 @@ type Publication = {
 | `request` | Optional Agent request, only for adapters that opted into mapping |
 
 An Artifact reference includes `id`, `task_id`, `type`, `version`, `producer`
-(Plugin/Session identity), `verification.status`, `payload_ref` and `sha256`.
+(Plugin/Session identity), `assertion.status`, `payload_ref` and `sha256`.
 File payloads use `{ kind: 'file', path }`, relative to the Task root.
 Do not generate replacement reference objects or resolve a different artifact
 inside initialization. Use the references supplied by the active plan.
@@ -174,7 +194,7 @@ A consumer Profile declares, for example:
 
 ```js
 requirements: [{ input_name: 'source', type: 'text.result', version: '1',
-  verification_status: 'READY' }]
+  assertion_status: 'READY', producer_plugin_id: 'text-domain' }]
 ```
 
 The caller selects the source's ID from the producing receipt or Inspect and sets
@@ -191,7 +211,7 @@ async function initialize(context) {
   if (!source) throw new Error('Named source is required');
   accepted = await readArtifactFile(context, source,
     { input_name: 'source', type: 'text.result', version: '1',
-      verification_status: 'READY', producer_plugin_id: 'text-domain' },
+      assertion_status: 'READY', producer_plugin_id: 'text-domain' },
     bytes => {
       const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
       if (typeof value.input !== 'string' || value.normalized !== value.input.toUpperCase())
@@ -216,6 +236,64 @@ For the separate CLI Task input snapshot, use
 `await readTaskInput(store, parse)`; `parse(value)` returns a checked domain value
 or throws. Task input, per-Invoke `request.data`, instruction text and upstream
 Artifact references are four distinct input channels. Do not silently interchange them.
+
+## Require a result and independent proof
+
+This definition shows three explicitly selectable Runs. It is a configuration recipe:
+to execute it, provide Host registrations for the three binding keys. The declaration
+alone can be validated without loading a native plugin or calling a model.
+
+<!-- example: evidence-application.mjs -->
+```js
+import { defineApplication } from 'agent-loom';
+
+export const application = defineApplication({
+  id: 'evidence-example', version: '1', runtime: { id: 'pi', version: '0.85.1' },
+  plugins: [
+    { id: 'author', role: 'domain', native: { runtime: 'pi', binding_key: 'author' },
+      produces: [{ type: 'sample.result', version: '1' }] },
+    { id: 'verifier', role: 'domain', native: { runtime: 'pi', binding_key: 'verifier' },
+      produces: [{ type: 'sample.proof', version: '1' }] },
+    { id: 'consumer', role: 'domain', native: { runtime: 'pi', binding_key: 'consumer' },
+      produces: [] }
+  ],
+  profiles: [
+    { id: 'produce', primary: 'author', aspects: [], requirements: [],
+      entry: { id: 'sample.produce', request_mapping: 'v1' } },
+    { id: 'verify', primary: 'verifier', aspects: [],
+      entry: { id: 'sample.verify', request_mapping: 'v1' },
+      requirements: [{ input_name: 'result', type: 'sample.result', version: '1',
+        producer_plugin_id: 'author' }] },
+    { id: 'consume', primary: 'consumer', aspects: [],
+      entry: { id: 'sample.consume', request_mapping: 'v1' },
+      requirements: [
+        { input_name: 'result', type: 'sample.result', version: '1', producer_plugin_id: 'author' },
+        { input_name: 'proof', type: 'sample.proof', version: '1',
+          producer_plugin_id: 'verifier', assertion_status: 'READY' }
+      ] }
+  ]
+});
+```
+
+Choose produce, verify and consume separately. Loom does not execute them as a graph.
+The verifier validates the selected result and publishes a proof file containing
+`subject_artifact_id`, `subject_sha256` and `verdict`, returning an ordinary
+`sample.proof@1` publication with `assertion_status: 'READY'`.
+
+The consumer's initializer must read **both** exact references using
+`readArtifactFile`, with the matching requirements above. In the proof's domain
+verification callback, compare `subject_artifact_id` and `subject_sha256` against
+the selected result reference, and require the application's accepted verdict.
+Reject if any comparison fails. The helper checks the proof file's own digest;
+the callback checks which result the proof is about. Pass the checked result into
+`run` only after the entire initializer succeeds.
+
+A second proof from the required verifier makes an unpinned binding ambiguous.
+Select the intended proof by named input; selection cannot override the producer
+constraint. A proof about another result still fails domain initialization even
+when Check found exactly one candidate. No Consumption is recorded for rejected
+initialization. Producer IDs refer to trusted Host bindings, not cryptographically
+authenticated external organizations.
 
 ## Plugin-specific behavior is an explicit contract
 

@@ -20,7 +20,7 @@ export function auditAdapter(config = {}) {
       assert.equal(summary.request_id, requestId);
       assert.equal(summary.native_session_id, session.sessionManager.getSessionId());
       assert.equal(summary.reported_outcome, outcome);
-      return [{ type: 'audit.session-summary', version: '1', verification_status: 'COMPLETED',
+      return [{ type: 'audit.session-summary', version: '1', assertion_status: 'COMPLETED',
         path: relative(context.task_root, path).replaceAll('\\', '/') }];
     },
   };

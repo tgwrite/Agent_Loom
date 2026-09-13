@@ -38,7 +38,7 @@ try {
       assert(profile);
       const artifacts = profile.requirements.map(req => {
         const matches = state.artifacts.filter(a => a.task_id === taskId && a.type === req.type && a.version === req.version
-          && a.verification.status === req.verification_status && (!req.artifact_id || a.id === req.artifact_id));
+          && a.assertion.status === req.assertion_status && (!req.artifact_id || a.id === req.artifact_id));
         if (!matches.length) fail('PreconditionNotSatisfied');
         if (matches.length > 1) fail('BindingConflict');
         return matches[0];
@@ -101,8 +101,8 @@ try {
           for (const p of publications) {
             assert(plugin.produces.some(contract => contract.type === p.type && contract.version === p.version));
             state.artifacts.push({ id: randomUUID(), task_id: taskId, type: p.type, version: p.version,
-              producer: { plugin_id: plugin.id, capability_id: 'native-publication', session_id: id },
-              executor: { actor_id: record.actor.id, runtime_id: 'pi' }, verification: { status: p.verification_status },
+              producer: { plugin_id: plugin.id, session_id: id },
+              executor: { actor_id: record.actor.id, runtime_id: 'pi' }, assertion: { status: p.assertion_status },
               payload_ref: { kind: 'file', path: p.path }, sha256: sha256(await readFile(await containedFile(root, p.path))),
               created_at: new Date().toISOString() });
           }

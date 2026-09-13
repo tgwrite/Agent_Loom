@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectTask } from '../../packages/container-core/src/index.ts';
+import { inspectTask } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, session, timestamp } from '../helpers.ts';
 
 test('observer failures and artifact counts remain attributable without failing the domain Session', async (t) => {

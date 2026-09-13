@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalTaskStore } from 'agent-loom';
+import { createTask } from 'agent-loom';
 import { connectLoom, createRequest } from 'agent-loom/agent';
 import { application } from '../packaging/integration/measurement.mjs';
 import { createSessionHost } from '../packaging/integration/host.mjs';
@@ -11,8 +11,7 @@ import { createSessionHost } from '../packaging/integration/host.mjs';
 const root = await mkdtemp(join(tmpdir(), 'loom-agent-demo-'));
 try {
   const taskId = 'measurement-demo';
-  await LocalTaskStore.create(root, { schema_version: 2, id: taskId, application_id: application.id,
-    application, title: 'Synthetic measurement handoff', created_at: new Date().toISOString() });
+  await createTask({ taskRoot: root, taskId, application, title: 'Synthetic measurement handoff' });
   const loom = await connectLoom({ taskRoot: root, taskId,
     host: { actor: { id: 'demo-operator' }, createHost: createSessionHost } });
 
@@ -42,7 +41,7 @@ try {
   console.log(JSON.stringify({ synthetic: true, services: ['discover', 'describe', 'check', 'invoke', 'inspect'],
     missing_input: missing.blockers[0].diagnostic.reason_code, execution: consumed.execution.status,
     source_reused: true, producer_sessions: 1, consumer_sessions: 1, cold_inspection: facts.history,
-    business_acceptance: consumed.business_acceptance.status }, null, 2));
+     }, null, 2));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

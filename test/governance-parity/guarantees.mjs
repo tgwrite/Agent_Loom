@@ -9,7 +9,7 @@ import { containedFile, sha256 } from '../lightweight/handoff.mjs';
 
 const cases = [];
 function check(g, name, action) { cases.push({ id: `${g}:${name}`, guarantee: g, action }); }
-const publication = (path = 'payload.txt') => ({ type: 'source', version: '1', path, verification_status: 'READY' });
+const publication = (path = 'payload.txt') => ({ type: 'source', version: '1', path, assertion_status: 'READY' });
 async function start(f, behavior = {}, profile = 'producer') {
   const native = await fakeOptions(f.root, behavior); f.native = native;
   return f.arm.run(f.store, await f.arm.prepare(f.store, profile), native.options);
@@ -55,7 +55,7 @@ check('G2', 'snapshot-and-plan', async f => {
 });
 for (const invalid of ['producer', 'type', 'version', 'verification']) check('G3', invalid, async f => {
   await f.store.startSession(session()); const a = artifact();
-  if (invalid === 'producer') a.producer.plugin_id = 'foreign'; else if (invalid === 'verification') a.verification.status = '';
+  if (invalid === 'producer') a.producer.plugin_id = 'foreign'; else if (invalid === 'verification') a.assertion.status = '';
   else a[invalid] = 'undeclared';
   await assert.rejects(f.store.publishArtifact(a)); assert.equal((await f.store.listArtifacts()).length, 0);
 });
@@ -178,13 +178,13 @@ check('G14', 'legacy-observer-read-only', async f => {
   const e = view.sessions[0].events.find(e => e.type === 'observer.failed');
   assert.equal(e.payload.phase, undefined); assert.equal(e.payload.failure_class, undefined); assert.deepEqual(await fileHashes(f.root), before);
 });
-check('G15', 'legacy-artifact-read-only', async f => {
+check('G15', 'legacy-artifact-rejected-without-rewrite', async f => {
   await f.store.startSession(session());
   const legacy = JSON.parse(await fs.readFile(new URL('./fixtures/legacy/artifact-v1.json', import.meta.url)));
   await corrupt(f, 'artifact', rows => rows.push(legacy));
-  await f.store.publishArtifact({ ...artifact('task-one', 'new-artifact') });
-  const before = await fileHashes(f.root), view = await f.arm.inspect(await f.arm.open(f.root));
-  const a = view.artifacts.find(a => a.id === legacy.id); assert.equal(a.producer_phase, undefined); assert.equal(a.native_runtime_session_id, undefined);
+  const before = await fileHashes(f.root);
+  await assert.rejects(async () => f.arm.inspect(await f.arm.open(f.root)));
+  await assert.rejects(f.store.publishArtifact({ ...artifact('task-one', 'new-artifact') }));
   assert.deepEqual(await fileHashes(f.root), before);
 });
 for (const target of ['event', 'terminal']) for (const rejected of [false, true]) check('G16', `${target}-${rejected}`, async f => {

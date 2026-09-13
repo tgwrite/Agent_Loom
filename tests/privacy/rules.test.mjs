@@ -16,7 +16,7 @@ test('publication rules detect synthetic private paths, credentials and unreview
 
 test('public relative references and neutral project email pass', () => {
   assert.deepEqual(inspectText('fixtures/synthetic.json contributors@example.invalid'), []);
-  assert.deepEqual(inspectPath('packages/container-core/src/index.ts'), []);
+  assert.deepEqual(inspectPath('packages/container-core/src/internal.ts'), []);
 });
 
 test('only the reviewed public repository URLs are exempted from the URL scan', () => {

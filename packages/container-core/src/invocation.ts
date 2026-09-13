@@ -7,21 +7,22 @@ import { validateData } from './data-schema.ts';
 import type { DataSchema } from './data-schema.ts';
 export type { DataSchema } from './data-schema.ts';
 
-/** Profile metadata, never a second execution registry. */
+/** Execution contract only; presentation never grants execution eligibility. */
 export interface EntryContract {
   id: string;
-  purpose: string;
-  name?: string;
-  tags?: readonly string[];
-  implementation: 'native' | 'synthetic';
   request_mapping?: 'v1';
   data_schema?: DataSchema;
   data_required?: boolean;
-  data_examples?: readonly JsonValue[];
-  /** App-selected evidence references; Core does not interpret their business verdicts. */
-  acceptance_artifacts?: readonly { type: string; version: string; producer_plugin_id: string }[];
-  effect_declarations: readonly string[];
+}
+
+/** Optional convenience metadata, outside governance validation. */
+export interface EntryPresentation {
+  purpose?: string;
+  name?: string;
+  tags?: readonly string[];
+  implementation?: 'native' | 'synthetic';
   examples?: readonly { instruction: string; valid: boolean; explanation: string }[];
+  data_examples?: readonly JsonValue[];
 }
 
 export interface AgentRequest {

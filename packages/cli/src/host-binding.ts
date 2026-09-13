@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { ContainerFailure } from '../../container-core/src/index.ts';
-import type { LocalTaskStore } from '../../container-core/src/index.ts';
+import { ContainerFailure } from '../../container-core/src/internal.ts';
+import type { LocalTaskStore } from '../../container-core/src/internal.ts';
 
 /** Local executable binding, separate from the portable Application definition. */
 export async function saveHostBinding(store: LocalTaskStore, module: string): Promise<void> {

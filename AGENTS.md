@@ -35,6 +35,15 @@ committer metadata, branches, tags, issues, pull requests, releases, and CI outp
   exposure without repeating the data, and prepare a scoped remediation. Never rewrite
   unrelated history or repositories.
 
+## Governance positioning
+
+Agent Loom is a minimal governance runtime: declared evidence determines whether
+selected Agent work may proceed. Core concepts are Task, Run, Artifact, Requirement
+and Consumption. Models choose work; Plugins own domain truth. Discover/Describe/Check
+are convenience APIs. Do not add Gate, Acceptance, Policy or Permission engines.
+Proofs are ordinary Artifacts; their subjects, digests and verdicts are consumer-verified.
+Producer identity is derived from trusted Host bindings, not accepted as model authority.
+
 ## Implementation baseline
 
 When available locally, read the implementation baseline in `doc/` before changing
@@ -43,13 +52,13 @@ Public contributors can use the boundaries below and the status in `README.md`
 without access to local planning documents.
 
 - Existing Plugin first: use native Pi Plugins with thin descriptors/adapters. Do not
-  restructure domain cores or reflection logic to satisfy Container interfaces.
-- Container owns composition, indexing, dependency resolution, and provenance.
+  restructure domain cores or reflection logic to satisfy Loom interfaces.
+- Loom owns evidence resolution, provenance, consumption, and execution facts.
   Plugins own domain truth, Handoff verification, policy, and guards.
 - Artifact dependencies never schedule execution. Missing requirements produce
   `PreconditionNotSatisfied`; ambiguous bindings produce `BindingConflict`.
 - A Session Run has at most one primary domain Plugin and any number of aspects.
-- Container metadata and private Plugin state stay out of the main Agent Context.
+- Governance metadata and private Plugin state stay out of the main Agent Context.
   Only explicit effects may change that context. Observer failures must be contained.
 - Keep `container-core` independent of Pi. Abstract only the Host surface actually
   required by reference Plugins. Pi 0.85.1 is a proposed target until Phase 0 passes.
@@ -60,9 +69,9 @@ without access to local planning documents.
   resolving a reference alone is not consumption. Keep native integration readiness
   distinct from static Application validation.
 - Do not add workflow scheduling, planners, multi-agent orchestration, databases,
-  permission engines, marketplaces, other Runtime adapters, or Web UI in v0.1.
+  permission engines, marketplaces, other Runtime adapters, or Web UI in v0.2.
 - Public synthetic tests demonstrate Core behavior only. Never label them as real
-  Plugin compatibility, domain trust, sidecar isolation, or complete v0.1 acceptance.
+  Plugin compatibility, domain trust, sidecar isolation, or complete native acceptance.
 
 ## Development
 
@@ -79,3 +88,8 @@ without access to local planning documents.
 
 中文约束：本仓库公开开源，禁止提交或发布私有仓库信息、本机路径、个人信息、
 公司信息和真实业务数据。所有示例使用合成数据，所有公开产物及 Git 历史均须审查。
+
+- Task schema 3 requires explicit migration of older stores. Never relabel persisted
+  verification as domain truth. Use assertion.status and producer-constrained Requirements.
+- Keep the root API explicit; storage, context, events and provisional Runtime internals
+  are not public contracts. Entry presentation never grants execution eligibility.

@@ -1,8 +1,9 @@
+import type { HostTaskStore } from '../../container-core/src/host.ts';
 import { mkdir, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { ContainerFailure, resolveProfile, validateApplication, hostReadinessFailure, safeHostReadinessFailure, safeNativeFailure } from '../../container-core/src/index.ts';
-import type { NativeReadinessReport } from '../../container-core/src/index.ts';
-import type { ApplicationDefinition, LocalTaskStore, SessionPlan, SessionHost, PluginDescriptor, SessionProfile } from '../../container-core/src/index.ts';
+import { ContainerFailure, resolveProfile, validateApplication, hostReadinessFailure, safeHostReadinessFailure, safeNativeFailure } from '../../container-core/src/internal.ts';
+import type { NativeReadinessReport } from '../../container-core/src/internal.ts';
+import type { ApplicationDefinition, SessionPlan, SessionHost, PluginDescriptor, SessionProfile } from '../../container-core/src/internal.ts';
 import { createPiApplicationHost } from './application-host.ts';
 import type { PiApplicationAdapter } from './application-host.ts';
 import { createPiSessionHost } from './session-host.ts';
@@ -12,7 +13,7 @@ export type PiAdapterHooks = Pick<PiApplicationAdapter, 'initialize' | 'run' | '
 export interface PiAdapterRegistration extends PiPluginBinding {
   request_mapping?: 'v1';
   /** Runs only for selected participants at launch, never when opening or validating a Host. */
-  create?(context: { store: LocalTaskStore; plan: SessionPlan }): PiAdapterHooks | Promise<PiAdapterHooks>;
+  create?(context: { store: HostTaskStore; plan: SessionPlan }): PiAdapterHooks | Promise<PiAdapterHooks>;
 }
 export interface PiHostModuleOptions {
   sdk: unknown;
@@ -20,7 +21,7 @@ export interface PiHostModuleOptions {
   /** Application binding keys; explicit local entries are shared by preflight and execution. */
   adapters: Readonly<Record<string, PiAdapterRegistration>>;
   /** Trusted local configuration. Credentials and provider policy remain with the application. */
-  configure(context: { store: LocalTaskStore }): {
+  configure(context: { store: HostTaskStore }): {
     settings: Record<string, unknown>; modelRuntime: unknown;
   } | Promise<{ settings: Record<string, unknown>; modelRuntime: unknown }>;
   /** Explicit local directory used by resource preflight, outside domain workspaces. */
@@ -84,7 +85,7 @@ export function createPiHostModule(options: PiHostModuleOptions) {
       }
       return { sdk: 'passed', bindings: 'passed', resources: 'passed', launcher: options.checkLauncher ? 'passed' : 'not-checked' };
     },
-    async createSessionHost({ store }: { store: LocalTaskStore }): Promise<SessionHost> {
+    async createSessionHost({ store }: { store: HostTaskStore }): Promise<SessionHost> {
       const application = store.task.application;
       const agentDir = join(store.taskRoot, '.agent-loom', 'pi');
       const validate = async (plan: SessionPlan) => {

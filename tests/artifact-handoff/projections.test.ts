@@ -21,7 +21,7 @@ test('Artifact references remain detached and exclude persisted extensions on pu
   assert(!Object.hasOwn(reference, 'extension'));
   assert(!Object.hasOwn(reference, 'producer_phase'));
   reference.producer.plugin_id = 'changed';
-  reference.verification.status = 'changed';
+  reference.assertion.status = 'changed';
   const { LocalTaskStore } = await import('../../packages/container-core/src/storage/index.ts');
   const reopened = await LocalTaskStore.open(root);
   assert.deepEqual(await reopened.resolveArtifact(requirement), toArtifactRef(record));

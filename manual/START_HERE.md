@@ -1,7 +1,7 @@
 # Getting started with Agent Loom
 
 For an agent or developer using the installed package. These instructions use the
-public APIs available in **0.1.0-alpha.7**. No framework, plugin or test implementation
+public APIs available in **0.2.0-alpha.1**. No framework, plugin or test implementation
 reading is required. Keep using the project-local CLI so an older global installation
 cannot silently select another version.
 
@@ -19,7 +19,7 @@ facade and the Pi bridge. An application supplies its plugin descriptors, native
 registrations, domain validation and model configuration. Installing a native Pi
 package does not automatically supply a Loom registration.
 
-Alpha.6 does not include a catalog of ready-made third-party adapters. The examples
+This candidate does not include a catalog of ready-made third-party adapters. The examples
 under `test/` in the repository are contributor experiments, not installation
 dependencies. Reuse a separately documented adapter when one exists. Otherwise,
 implement the boundary using the plugin's **documented API** and the contracts
@@ -29,17 +29,18 @@ specific missing contract; do not infer it from the package name or claim suppor
 ## 2. Install and establish the version
 
 Use Node.js >=24.12.0 and npm for Loom; native dependencies can require a newer
-Node version. Download the `.tgz`, `SHA256SUMS` and `INSTALL.md` from the repository's
-GitHub Releases page. In an empty application directory containing the archive:
+Node version. Build the unreleased candidate with `npm ci` and `npm run package:local`
+in a source checkout; use its `.tgz`, `SHA256SUMS` and `INSTALL.md`.
+In an empty application directory containing the archive:
 
 ```sh
 npm init -y
-npm install ./agent-loom-0.1.0-alpha.7.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
+npm install ./agent-loom-0.2.0-alpha.1.tgz --save-exact --offline --ignore-scripts --no-audit --no-fund
 npx --no-install loom --version
 npx --no-install loom --help
 ```
 
-Expect `0.1.0-alpha.7`. Existing projects skip `npm init -y`. The [installation
+Expect `0.2.0-alpha.1`. Existing projects skip `npm init -y`. The [installation
 guide](INSTALL.md) covers checksums, global CLI use and removal. Keep the archive
 at the dependency path recorded in your package manifest and lockfile.
 
@@ -72,15 +73,41 @@ nonzero exit code.
 ```sh
 npx --no-install loom app validate ./node_modules/agent-loom/examples/integration/measurement.mjs --definition-only --explain --json
 npx --no-install loom task create --app ./node_modules/agent-loom/examples/integration/measurement.mjs --root ./sample-task --name sample-task --input ./node_modules/agent-loom/examples/integration/measurement.json --json
+```
+
+Before producing anything, save this as `consume-request.json`:
+
+<!-- file: consume-request.json -->
+```json
+{
+  "schema_version": 1,
+  "request_id": "consume-first",
+  "task_id": "sample-task",
+  "entry_id": "measurement.consume"
+}
+```
+
+```sh
+npx --no-install loom agent check --task sample-task --root ./sample-task --request ./consume-request.json --json
+```
+
+This Check intentionally exits **1**: its first input is blocked and a blocker has
+`diagnostic.reason_code: MISSING_DEPENDENCY`. It creates no Run and records no
+consumption. A Requirement never starts its producer. Now choose the producer
+explicitly, then check the same request again:
+
+```sh
 npx --no-install loom session start --task sample-task --root ./sample-task --profile produce --json
-npx --no-install loom session start --task sample-task --root ./sample-task --profile consume --json
+npx --no-install loom agent check --task sample-task --root ./sample-task --request ./consume-request.json --json
+npx --no-install loom agent invoke --task sample-task --root ./sample-task --request ./consume-request.json --exclusive-writer --json
 npx --no-install loom task inspect sample-task --root ./sample-task --summary --json
 ```
 
+The second Check exits **0**. Invoke rechecks and starts a new consumer Run.
 Expected final counts: **2 Sessions, 2 Artifacts, 1 consumption, 0 aspect failures**.
 The consumer result is `{ "total": 5, "unit": "m" }`. Its file location is in the
 consumer Session's `outputs[].payload_ref.path`, relative to `sample-task`.
-`business_acceptance` remains `not-evaluated`.
+Producer assertions do not certify domain truth; consumers verify required evidence.
 
 This verifies the installed CLI and cross-Session handoff. It does not install or
 validate a real plugin. For your own application, proceed to the native tutorial;
@@ -130,10 +157,11 @@ Use `--exclusive-writer` on each Invoke and serialize all writers to that Task.
 | Plugin identity and role | `application.plugins[]` | One ID; `domain` or `aspect`; matching `native.binding_key` |
 | One callable operation | `application.profiles[]` | At most one primary, selected aspects, workspace and requirements |
 | Input parameters | `profile.entry` and adapter parser | `request_mapping`, Schema, required data and semantic checks |
-| Accepted upstream artifact | Profile requirement and `initialize` | Type/version/status, input name, identity and byte verification |
+| Accepted upstream artifact | Profile requirement and `initialize` | Type/version, optional producer/assertion, input name, exact identity and byte verification |
+| Independent proof | Ordinary producer plus downstream Requirement | Specify verifier identity; consumer checks subject, digest and verdict |
 | Native execution | Adapter `run` | Actual tool/command call and domain success criteria |
 | Explicit observation or review | Aspect `afterRun` / native hooks | Scope, trigger, independent failures and evidence |
-| Output publication | Adapter return value | Existing Task-relative file, declared type/version and verified status |
+| Output publication | Adapter return value | Existing Task-relative file, declared type/version and producer assertion |
 | Model/provider/authentication | Trusted Host `configure` | Explicit local policy; never request-controlled credentials |
 
 The [API reference](ADAPTER_API.md) defines these fields and callback signatures.

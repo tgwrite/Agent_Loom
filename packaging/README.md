@@ -1,15 +1,15 @@
-# Agent Loom — Plugin tools and artifact handoffs for AI agents
+# Agent Loom — Minimal Agent governance runtime
 
-**TypeScript CLI and SDK for discovering plugin capabilities, reusing artifacts
-across sessions, and inspecting provenance and failures.**
+**Declared evidence gates selected Agent work. Loom records provenance, exact
+consumption and durable execution facts; Plugins own domain truth.**
 
-**开发预览 / Alpha:** This is an installable development preview; complete v0.1 and
-independent Agent acceptance remain pending. No npm registry release is available.
+Development candidate: 0.2.0-alpha.1. This local package is not a published release
+or evidence of real Plugin compatibility. Read the migration chapter before upgrading.
 
 Canonical source: https://github.com/tgwrite/Agent_Loom
 
-Download the archive, SHA256SUMS and installation instructions from
-[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
+This is a precompiled archive. To build one yourself, run `npm ci` and
+`npm run package:local` in the source checkout; the installed package has no build scripts.
 
 This precompiled package provides the `loom` CLI, Core SDK and Pi Runtime bridge.
 It requires Node.js >=24.12.0 and npm. Source checkout, TypeScript compilation and
@@ -25,6 +25,15 @@ configure model credentials, or include a ready-to-run real webpage application.
 Applications supply explicit native bindings and domain verification. Plugins load
 at Session startup, according to the selected Application/Profile.
 
+The core model is Task, Run, Artifact, Requirement and Consumption. Run is called
+Session in the CLI. Evidence resolves uniquely, the consumer initializes and verifies
+it, consumption is persisted, then execution begins. Discover/Describe/Check are
+convenience APIs; Invoke rechecks the declared requirements.
+
+For a specified verifier, use `producer_plugin_id` in the proof Requirement and
+check the exact subject and verdict during consumer initialization. See the
+[result-and-proof recipe](manual/ADAPTER_API.md#require-a-result-and-independent-proof).
+
 Task data belongs in your own workspace. No workflow scheduling, automatic retry
 or schema migration is provided. CLI/SDK installation checks and real Pi task
 acceptance are separate. This alpha pre-release is offered for installation and
@@ -35,7 +44,7 @@ License: Apache-2.0. See LICENSE and NOTICE.
 
 | Agent operation | CLI | SDK |
 | --- | --- | --- |
-| Discover capabilities | `loom agent discover` | `loom.discover()` |
+| Discover entries | `loom agent discover` | `loom.discover()` |
 | Read an entry contract | `loom agent describe` | `loom.describe()` |
 | Check required inputs | `loom agent check` | `loom.check()` |
 | Invoke a selected entry | `loom agent invoke` | `loom.invoke()` |
@@ -50,10 +59,11 @@ For application developers and coding agents, start with [AGENT_GUIDE.md](AGENT_
 It maps business changes to files, describes the reusable Host and input helpers,
 and includes two executable synthetic domain examples. Use `app validate --explain`
 to inspect composition and `task inspect --summary` to see governance outcomes.
-Full inspection JSON and existing Host interfaces remain supported.
+Task schema 3 uses producer assertions and optional producer-constrained Requirements.
+Older stores require explicit migration; storage and event internals are no longer root exports.
 
 
-The alpha.7 `agent-loom/agent` export provides Discover, Describe, Check, Invoke and
+The `agent-loom/agent` export provides Discover, Describe, Check, Invoke and
 Inspect over the existing governance Kernel. Run `loom --help` for commands and
 see `AGENT_GUIDE.md` for request mapping. Requests and receipts are versioned,
 named bindings are rechecked at execution, and Pi factories are selected per

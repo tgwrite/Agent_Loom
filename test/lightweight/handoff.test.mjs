@@ -21,7 +21,7 @@ async function fixture(t) {
     final_url: 'fixture:page', http_status: 200, content_type: 'text/html', truncated: false,
     markdown: { path: 'producer/source.md', sha256: sha256(source), bytes: Buffer.byteLength(source) },
     native_result: { path: 'producer/native.json', sha256: sha256(resultBytes) } };
-  const artifact = { type: 'web.source', version: '1', task_id: 'task', verification: { status: 'READY' },
+  const artifact = { type: 'web.source', version: '1', task_id: 'task', assertion: { status: 'READY' },
     producer: { plugin_id: 'web-source', session_id: 'producer' },
     payload_ref: { kind: 'file', path: 'producer/handoff.json' } };
   const save = async () => {

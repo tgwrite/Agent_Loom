@@ -9,7 +9,8 @@ export interface ArtifactContract {
 
 export interface ArtifactRequirement extends ArtifactContract {
   input_name?: string;
-  verification_status: string;
+  assertion_status?: string;
+  producer_plugin_id?: string;
   artifact_id?: string;
 }
 
@@ -38,22 +39,24 @@ export interface ArtifactRecord extends ArtifactContract, ArtifactNativeProvenan
   task_id: string;
   producer: {
     plugin_id: string;
-    capability_id: string;
     session_id: string;
   };
   executor: { actor_id: string; runtime_id: string };
-  verification: { status: string };
+  assertion: { status: string };
   payload_ref: PayloadRef;
   sha256: string;
   created_at: string;
 }
 
 export function validateArtifactShape(value: ArtifactRecord): void {
-  [value.id, value.task_id, value.producer.plugin_id, value.producer.capability_id,
+  requireRecord(!Object.hasOwn(value, 'verification') && !Object.hasOwn(value.producer, 'capability_id'),
+    'Legacy Artifact fields require explicit migration.');
+  requireRecord(value.assertion !== null && typeof value.assertion === 'object', 'Artifact needs a producer assertion.');
+  [value.id, value.task_id, value.producer.plugin_id,
     value.producer.session_id, value.executor.actor_id, value.executor.runtime_id].forEach(identifier);
   text(value.type);
   text(value.version);
-  text(value.verification.status);
+  text(value.assertion.status);
   readNativeProvenance(value);
   timestamp(value.created_at);
   requireRecord(typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256),
@@ -72,7 +75,7 @@ export type ArtifactRef = Omit<ArtifactRecord, 'created_at'>;
 export function toArtifactRef(artifact: ArtifactRecord): ArtifactRef {
   return structuredClone({ id: artifact.id, task_id: artifact.task_id, type: artifact.type,
     version: artifact.version, payload_ref: artifact.payload_ref, sha256: artifact.sha256,
-    producer: artifact.producer, executor: artifact.executor, verification: artifact.verification,
+    producer: artifact.producer, executor: artifact.executor, assertion: artifact.assertion,
     ...readNativeProvenance(artifact) });
 }
 
@@ -85,4 +88,19 @@ export interface ArtifactConsumptionRecord {
   artifact_id: string;
   sha256: string;
   consumed_at: string;
+}
+
+/** Shared predicate for resolution, preflight, history and adapter input checks. */
+export function matchesArtifact(artifact: ArtifactRef, requirement: ArtifactRequirement): boolean {
+  requireRecord(Object.keys(requirement).every(key => ['type', 'version', 'input_name', 'assertion_status', 'producer_plugin_id', 'artifact_id'].includes(key)),
+    'Unsupported Artifact requirement field.');
+  text(requirement.type); text(requirement.version);
+  if (requirement.assertion_status !== undefined) text(requirement.assertion_status);
+  if (requirement.producer_plugin_id !== undefined) identifier(requirement.producer_plugin_id);
+  if (requirement.artifact_id !== undefined) identifier(requirement.artifact_id);
+  if (requirement.input_name !== undefined) identifier(requirement.input_name);
+  return artifact.type === requirement.type && artifact.version === requirement.version
+    && (requirement.assertion_status === undefined || artifact.assertion.status === requirement.assertion_status)
+    && (requirement.producer_plugin_id === undefined || artifact.producer.plugin_id === requirement.producer_plugin_id)
+    && (requirement.artifact_id === undefined || artifact.id === requirement.artifact_id);
 }

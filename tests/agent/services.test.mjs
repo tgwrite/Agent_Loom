@@ -6,25 +6,24 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { LocalTaskStore, ContainerFailure, prepareSession, executeSession, registerSafeDiagnostics, safeNativeFailure } from '../../dist/packages/container-core/src/index.js';
+import { LocalTaskStore, ContainerFailure, prepareSession, executeSession, registerSafeDiagnostics, safeNativeFailure } from '../../dist/packages/container-core/src/internal.js';
 import { connectLoom, discoverEntries, describeEntry } from '../../dist/packages/container-core/src/agent.js';
 import { definePiApplicationModule, createPiApplicationHost, readArtifactFile } from '../../dist/packages/runtime-pi/src/index.js';
 
 const domainFailure = registerSafeDiagnostics('domain', ['DOMAIN_POLICY_REJECTED']);
 const aspectFailure = registerSafeDiagnostics('aspect', ['AUDIT_REJECTED']);
 const contract = { type: 'sensor.sample', version: '1' };
-const requirement = { ...contract, verification_status: 'READY' };
+const requirement = { ...contract, assertion_status: 'READY' };
 async function setup(t, hostOptions = {}) {
   const root = await mkdtemp(join(tmpdir(), 'loom-agent-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const state = { factories: [], initialized: 0, executed: 0, configured: 0, loaded: 0, prompts: [], mode: '', requests: [] };
-  const entry = id => ({ id: `sensor.${id}`, purpose: `Synthetic ${id} operation`, tags: ['sensor'],
-    implementation: 'synthetic', request_mapping: 'v1', effect_declarations: ['task-files-write'] });
+  const entry = id => ({ id: `sensor.${id}`, request_mapping: 'v1' });
   const profiles = [
-    { id: 'produce', primary: 'producer', aspects: [], requirements: [], entry: entry('produce') },
+    { id: 'produce', primary: 'producer', aspects: [], requirements: [], entry: entry('produce'), presentation: { tags: ['sensor'], implementation: 'synthetic' } },
     { id: 'consume', primary: 'consumer', aspects: ['audit'], requirements: [
-      { ...requirement, input_name: 'left' }, { ...requirement, input_name: 'right' }], entry: entry('consume') },
-    { id: 'idle', primary: 'idle', aspects: [], requirements: [], entry: entry('idle') },
+      { ...requirement, input_name: 'left' }, { ...requirement, input_name: 'right' }], entry: entry('consume'), presentation: { tags: ['sensor'], implementation: 'synthetic' } },
+    { id: 'idle', primary: 'idle', aspects: [], requirements: [], entry: entry('idle'), presentation: { tags: ['sensor'], implementation: 'synthetic' } },
   ];
   const sdk = {
     SettingsManager: { inMemory: value => value },
@@ -43,7 +42,7 @@ async function setup(t, hostOptions = {}) {
   for (const id of ['producer', 'consumer', 'audit', 'idle']) {
     const file = join(root, `${id}.mjs`); await writeFile(file, 'export default () => {};');
     plugins.push({ descriptor: { id, role: id === 'audit' ? 'aspect' : 'domain',
-      native: { runtime: 'pi', binding_key: id }, capabilities: [],
+      native: { runtime: 'pi', binding_key: id },
       produces: id === 'producer' ? [contract] : id === 'consumer' ? [{ type: 'sensor.report', version: '1' }] : [] },
       adapter: { entry: file, ...(id === 'audit' ? {} : { request_mapping: 'v1' }),
         create({ store, plan }) {
@@ -79,7 +78,7 @@ async function setup(t, hostOptions = {}) {
               for (const [i, value] of values.entries()) {
                 const path = `${context.session_id}-${i}.json`;
                 await writeFile(join(store.taskRoot, path), JSON.stringify(value));
-                publications.push({ ...(id === 'producer' ? contract : { type: 'sensor.report', version: '1' }), path, verification_status: 'READY' });
+                publications.push({ ...(id === 'producer' ? contract : { type: 'sensor.report', version: '1' }), path, assertion_status: 'READY' });
               }
               return publications;
             },
@@ -90,10 +89,15 @@ async function setup(t, hostOptions = {}) {
   }
   const module = definePiApplicationModule({ id: 'sensor-app', version: '1', profiles, plugins, sdk, sdkVersion: 'synthetic',
     preflightDirectory: root, configure() { state.configured++; return { settings: {}, modelRuntime: undefined }; }, ...hostOptions });
-  const store = await LocalTaskStore.create(join(root, 'task'), { schema_version: 2, id: 'sensor-task', application_id: module.application.id,
+  const store = await LocalTaskStore.create(join(root, 'task'), { schema_version: 3, id: 'sensor-task', application_id: module.application.id,
     application: module.application, title: 'Synthetic sensor Task', created_at: new Date().toISOString() });
+  // Inject storage failures through the internal fixture, outside the public Host facade.
+  const originalOpen = LocalTaskStore.open.bind(LocalTaskStore);
+  t.mock.method(LocalTaskStore, 'open', async path => path === store.taskRoot ? store : originalOpen(path));
+
   const host = { actor: { id: 'trusted-executor' },
-    async createHost({ store: active }) {
+    async createHost() {
+    const active = store;
       if (state.mode === 'storage') active.settleSession = async () => { throw new ContainerFailure('StorageFailure', 'synthetic storage failure'); };
       if (state.mode === 'unreadable') active.listSessions = async () => { throw new ContainerFailure('StorageFailure', 'synthetic storage failure'); };
       return module.createSessionHost({ store: active });
@@ -143,7 +147,7 @@ test('empty and ambiguous inputs block without scheduling; names survive reorder
   const direct = await executeSession(f.store, reordered, await f.module.createSessionHost({ store: f.store }), { id: 'trusted-executor' });
   assert.equal(direct.status, 'completed');
   const result = await f.loom.invoke(request);
-  assert.equal(result.execution.status, 'completed'); assert.equal(result.business_acceptance.status, 'not-evaluated');
+  assert.equal(result.execution.status, 'completed'); assert.equal(Object.hasOwn(result, 'business_acceptance'), false);
   assert.equal(result.participants.primary.status, 'completed');
   assert.equal(result.participants.aspects[0].status, 'completed');
   assert.equal(result.participants.aspects[0].evidence_scope, 'after-run');

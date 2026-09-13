@@ -1,5 +1,5 @@
 /** Proposed by the baseline; real compatibility verification is still pending. */
-import { ContainerFailure } from '../../container-core/src/index.ts';
+import { ContainerFailure } from '../../container-core/src/internal.ts';
 
 export { createPiSessionHost } from './session-host.ts';
 export { createPiApplicationHost } from './application-host.ts';

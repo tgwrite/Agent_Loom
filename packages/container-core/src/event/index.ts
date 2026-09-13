@@ -4,9 +4,6 @@ export type CoreEventType =
   | 'session.started'
   | 'session.completed'
   | 'session.failed'
-  | 'capability.started'
-  | 'capability.completed'
-  | 'capability.failed'
   | 'artifact.published'
   | 'artifact.consumed'
   | 'observer.failed';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveProfile } from '../../packages/container-core/src/index.ts';
+import { resolveProfile } from '../../packages/container-core/src/internal.ts';
 import { c2AnalysisApplication } from '../../examples/c2-analysis-application/application.ts';
 
 test('reference Profiles each select one domain Plugin and Postmortem', () => {
@@ -22,11 +22,11 @@ test('duplicate or missing Profile bindings fail explicitly', () => {
   assert.throws(() => resolveProfile({ ...c2AnalysisApplication, profiles: [profile] }, profile.id), { code: 'BindingConflict' });
 });
 
-test('Capability provider conflicts are never auto-selected', () => {
+test('retired Capability declarations require explicit migration', () => {
   const application = structuredClone(c2AnalysisApplication);
   const plugins = application.plugins.map((plugin) => ({ ...plugin,
     capabilities: [{ id: 'shared', version: '1', provider: plugin.id, requirements: [] }] }));
-  assert.throws(() => resolveProfile({ ...application, plugins }, 'c2forge'), { code: 'BindingConflict' });
+  assert.throws(() => resolveProfile({ ...application, plugins }, 'c2forge'), { code: 'InvalidDefinition' });
 });
 
 test('an aspect-only Session is allowed', () => {

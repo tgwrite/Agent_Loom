@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fixture, artifact } from '../helpers.ts';
 import { executeSession, prepareSession, registerSafeDiagnostics, createNativeFailure, inspectTask,
-  diagnosticFor, ContainerFailure, safeNativeFailure, readSafeDiagnostic } from '../../packages/container-core/src/index.ts';
-import type { SessionHost } from '../../packages/container-core/src/index.ts';
+  diagnosticFor, ContainerFailure, safeNativeFailure, readSafeDiagnostic } from '../../packages/container-core/src/internal.ts';
+import type { SessionHost } from '../../packages/container-core/src/internal.ts';
 import { connectLoom, createRequest } from '../../packages/container-core/src/agent.ts';
 import { summarizeTask } from '../../packages/cli/src/experience.ts';
 

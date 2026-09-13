@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { appendFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { inspectTask, taskInspectionView } from '../../packages/container-core/src/index.ts';
+import { inspectTask, taskInspectionView } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, session, timestamp } from '../helpers.ts';
 
 test('Core inspection interprets legacy and native facts without altering JSON or persisted evidence', async t => {

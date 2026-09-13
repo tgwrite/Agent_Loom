@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
-import { executeSession, LocalTaskStore, prepareSession, inspectTask, ContainerFailure } from '../../packages/container-core/src/index.ts';
+import { executeSession, LocalTaskStore, prepareSession, inspectTask, ContainerFailure } from '../../packages/container-core/src/internal.ts';
 import { connectLoom, createRequest } from '../../packages/container-core/src/agent.ts';
 import { summarizeTask, printTaskSummary } from '../../packages/cli/src/experience.ts';
 import { createPiApplicationHost, createPiSessionHost } from '../../packages/runtime-pi/src/index.ts';
@@ -25,7 +25,7 @@ async function setup(t: TestContext, fault?: 'primary' | 'aspect' | 'shutdown' |
     const profile = application.profiles.find(p => p.id === 'test-observing')!;
     profile.aspects = [...profile.aspects, 'second-observer'];
   }
-  const store = await LocalTaskStore.create(root, { schema_version: 2, id: 'task-one',
+  const store = await LocalTaskStore.create(root, { schema_version: 3, id: 'task-one',
     application_id: application.id, application, title: 'Synthetic bridge test', created_at: timestamp });
   const entry = join(root, 'domain.mjs');
   const aspect = join(root, 'aspect.mjs');
@@ -97,7 +97,7 @@ test('late native errors retain trusted origin and phase after domain completion
             : origin === 'aspect' ? f.options.bindings['test-observer']!.entry : join(f.root, 'unbound.mjs'),
           event: 'command', error: 'synthetic-native-canary', plugin_id: 'forged-owner', phase: 'forged-phase' });
           await writeFile(join(context.task_root, 'result.txt'), 'Synthetic result');
-          return [{ type: 'SyntheticHandoff', version: '3', path: 'result.txt', verification_status: 'READY' }];
+          return [{ type: 'SyntheticHandoff', version: '3', path: 'result.txt', assertion_status: 'READY' }];
         } },
       'test-observer': f.options.bindings['test-observer']!,
     } });
@@ -170,7 +170,7 @@ test('Application host derives publication provenance and lifecycle from the act
       async initialize(context) { assert.equal(context.task_id, f.store.task.id); },
       async run(_native, context) {
         await writeFile(join(context.task_root, 'native-output.txt'), bytes);
-        return [{ type: 'SyntheticHandoff', version: '3', path: 'native-output.txt', verification_status: 'READY' }];
+        return [{ type: 'SyntheticHandoff', version: '3', path: 'native-output.txt', assertion_status: 'READY' }];
       } },
     'test-observer': f.options.bindings['test-observer']!,
   } });
@@ -192,7 +192,7 @@ test('Application host rejects an invalid publication without indexing success',
   const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
     'test-domain': { entry: f.options.bindings['test-domain']!.entry,
       async initialize() {}, async run() {
-        return [{ type: 'SyntheticHandoff', version: '3', path: '../outside.txt', verification_status: 'READY' }];
+        return [{ type: 'SyntheticHandoff', version: '3', path: '../outside.txt', assertion_status: 'READY' }];
       } },
     'test-observer': f.options.bindings['test-observer']!,
   } });
@@ -208,7 +208,7 @@ test('Application host contains two independent aspect failures and attributes s
     'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
     'test-observer': { ...f.options.bindings['test-observer']!, async afterRun(_session, context) {
       await writeFile(join(context.task_root, 'review.md'), 'Native review');
-      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.md', verification_status: 'COMPLETED' }];
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.md', assertion_status: 'COMPLETED' }];
     } },
     'second-observer': { ...f.options.bindings['second-observer']!, async afterRun() { throw new Error('private diagnostic'); } },
   } });
@@ -237,7 +237,7 @@ test('Invalid aspect output is not indexed and does not prevent the next aspect 
   const host = createPiApplicationHost({ ...f.options, store: f.store, adapters: {
     'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
     'test-observer': { ...f.options.bindings['test-observer']!, async afterRun() {
-      return [{ type: 'SyntheticCheckpoint', version: '1', path: '../escape.md', verification_status: 'COMPLETED' }];
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: '../escape.md', assertion_status: 'COMPLETED' }];
     } },
     'second-observer': { ...f.options.bindings['second-observer']!, async afterRun() { secondRan = true; return []; } },
   } });
@@ -257,7 +257,7 @@ test('Aspect publication storage rejection stays fatal and records its class whe
     'test-domain': { ...f.options.bindings['test-domain']!, async initialize() {}, async run() { return []; } },
     'test-observer': { ...f.options.bindings['test-observer']!, async afterRun(_native, context) {
       await writeFile(join(context.task_root, 'review.txt'), 'Native review');
-      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.txt', verification_status: 'COMPLETED' }];
+      return [{ type: 'SyntheticCheckpoint', version: '1', path: 'review.txt', assertion_status: 'COMPLETED' }];
     } },
   } });
   await assert.rejects(executeSession(f.store, await prepareSession(f.store, 'test-observing'), host, { id: 'operator' }),

@@ -8,7 +8,7 @@ const [operation, rootArg, taskId, profileId, appFile] = process.argv.slice(2), 
 try {
   if (operation === 'create') {
     const { application } = await import(pathToFileURL(resolve(appFile)));
-    await ControlStore.create(root, { schema_version: 2, id: taskId, application_id: application.id, application,
+    await ControlStore.create(root, { schema_version: 3, id: taskId, application_id: application.id, application,
       title: 'Synthetic native parity', created_at: new Date().toISOString() });
     console.log(JSON.stringify({ task: taskId }));
   } else {

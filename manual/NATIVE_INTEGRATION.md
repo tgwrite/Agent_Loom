@@ -1,6 +1,6 @@
 # Connect a native Pi plugin
 
-This tutorial works with **Loom 0.1.0-alpha.7**, Pi **0.85.1**, Node.js >=24.15.0
+This tutorial works with **Loom 0.2.0-alpha.1**, Pi **0.85.1**, Node.js >=24.15.0
 and ESM. It supplies every file for a small native integration. You do not need to
 read Loom or plugin implementation source to complete it.
 
@@ -13,7 +13,7 @@ logic. See [adapting another plugin](#adapting-another-plugin).
 ## Prepare the application directory
 
 First follow [installation](INSTALL.md) in your own project. Keep the project-local
-Loom alpha.7 dependency. Set the project-local Task index as described in
+Loom 0.2.0-alpha.1 candidate dependency. Set the project-local Task index as described in
 [Getting started](START_HERE.md#2-install-and-establish-the-version), or choose
 Task names not already registered in your per-user index. Add these pinned dependencies:
 
@@ -43,16 +43,15 @@ export const nativeHost = './host.mjs';
 export const application = {
   id: 'text-app', version: '1', runtime: { id: 'pi', version: '0.85.1' },
   plugins: [{ id: 'text-domain', role: 'domain',
-    native: { runtime: 'pi', binding_key: 'text' }, capabilities: [],
+    native: { runtime: 'pi', binding_key: 'text' },
     produces: [{ type: 'text.result', version: '1' }] }],
   profiles: [{ id: 'normalize', primary: 'text-domain', aspects: [],
     workspace: 'normalize', requirements: [],
-    entry: { id: 'text.normalize', purpose: 'Normalize text through a native Pi tool',
-      implementation: 'native', request_mapping: 'v1', data_required: true,
+    entry: { id: 'text.normalize', request_mapping: 'v1', data_required: true,
       data_schema: { type: 'object', additionalProperties: false, required: ['text'],
-        properties: { text: { type: 'string', minLength: 1, maxLength: 2000 } } },
-      data_examples: [{ text: 'Hello Loom' }],
-      effect_declarations: ['model-request', 'task-files-write'] } }],
+        properties: { text: { type: 'string', minLength: 1, maxLength: 2000 } } } },
+    presentation: { purpose: 'Normalize text through a native Pi tool',
+      implementation: 'native', data_examples: [{ text: 'Hello Loom' }] } }],
 };
 ```
 
@@ -203,7 +202,7 @@ export function createTextAdapter() {
         assert.equal(value.normalized, text.toUpperCase(), 'Domain result rejected');
         const output = join(context.workspace, `${context.session_id}.json`);
         await writeFile(output, JSON.stringify(value, null, 2) + '\n', { flag: 'wx' });
-        return [{ type: 'text.result', version: '1', verification_status: 'READY',
+        return [{ type: 'text.result', version: '1', assertion_status: 'READY',
           path: relative(context.task_root, output).replaceAll('\\', '/') }];
       } catch (error) {
         await writeFile(join(context.workspace, `${context.session_id}.error.txt`),
@@ -299,8 +298,7 @@ has confirmed `execution.status: 'completed'`, no aspect failures and one
 Task summary supplies `sessions[].outputs[].payload_ref.path`. Read that path
 relative to `text-task`; the file must contain
 `{ "input": "Hello Loom", "normalized": "HELLO LOOM" }`.
-The default business-acceptance field stays `not-evaluated`; the example's domain
-check does not create a new Loom business-acceptance authority.
+The adapter asserts its publication status. Downstream Runs require ordinary Proof Artifacts and their consumers verify exact evidence.
 
 Do not run Invoke again merely to obtain the same receipt: a repeated request ID
 does not deduplicate execution. Inspect the existing Task instead.

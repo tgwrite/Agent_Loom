@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { LocalTaskStore, inspectTask, prepareSession } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore, inspectTask, prepareSession } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, requirement, session, timestamp } from '../helpers.ts';
 
 test('resolving and planning do not mark consumption; accepted bindings survive reopening', async (t) => {

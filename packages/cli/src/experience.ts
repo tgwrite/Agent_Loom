@@ -1,14 +1,13 @@
 import { describeEntry } from '../../container-core/src/agent.ts';
-import { taskInspectionView } from '../../container-core/src/index.ts';
+import { taskInspectionView } from '../../container-core/src/internal.ts';
 import { projectSessionFacts } from '../../container-core/src/agent-receipt.ts';
-import type { ApplicationDefinition, ContainerFailure, TaskSnapshot } from '../../container-core/src/index.ts';
+import type { ApplicationDefinition, ContainerFailure, TaskSnapshot } from '../../container-core/src/internal.ts';
 
 /** Read-only projection of canonical governance facts, never a new acceptance record. */
 export function summarizeTask(snapshot: TaskSnapshot) {
   const view = taskInspectionView(snapshot);
   return {
     schema_version: 1, task: view.task.id, application: view.task.application_id,
-    business_acceptance: 'not-evaluated' as const,
     sessions: [...view.sessions].sort((a, b) => a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id))
       .map(session => {
         const facts = projectSessionFacts(session);
@@ -17,13 +16,13 @@ export function summarizeTask(snapshot: TaskSnapshot) {
           ...(session.request ? { request_id: session.request.request_id, entry_id: session.request.entry_id } : {}),
           status: session.status, primary: session.primary_plugin_id, aspects: session.aspect_plugin_ids,
           execution: facts.execution, observation: facts.observation, participants: facts.participants,
-          diagnostic: facts.diagnostic ?? null, business_acceptance: facts.business_acceptance,
+          diagnostic: facts.diagnostic ?? null,
           failure: session.failure ?? null, aspect_failures: session.aspect_failures,
           consumed: session.consumed.map(record => ({ id: record.id, artifact_id: record.artifact_id,
             sha256: record.sha256, producer: record.producer, consumer_session_id: record.session_id,
             consumer_plugin_id: record.consumer_plugin_id, consumed_at: record.consumed_at })),
           outputs: session.produced.map(artifact => ({ id: artifact.id, type: artifact.type,
-            version: artifact.version, sha256: artifact.sha256, verification: artifact.verification.status,
+            version: artifact.version, sha256: artifact.sha256, assertion: artifact.assertion.status,
             producer: artifact.producer, native_provenance: artifact.native_provenance, payload_ref: artifact.payload_ref })),
         };
       }),
@@ -49,7 +48,7 @@ export function printTaskSummary(summary: ReturnType<typeof summarizeTask>): voi
     for (const failure of session.aspect_failures)
       console.log(`Aspect failure: ${failure.plugin_id}: ${failure.failure.code} [${failure.context.map(fact => `${fact.name}=${fact.value}`).join(', ')}]`);
     for (const input of session.consumed) console.log(`Consumed: ${input.artifact_id} <- ${input.producer.session_id}`);
-    for (const artifact of session.outputs) console.log(`Output: ${artifact.type}@${artifact.version} ${artifact.verification}`
+    for (const artifact of session.outputs) console.log(`Output: ${artifact.type}@${artifact.version} ${artifact.assertion}`
       + ` by ${artifact.producer.plugin_id}: ${artifact.payload_ref.kind === 'file' ? artifact.payload_ref.path : '(inline)'}`);
   }
   console.log(`\nSessions: ${summary.counts.sessions}; Artifacts: ${summary.counts.artifacts}; Aspect failures: ${summary.counts.aspect_failures}`);
@@ -76,7 +75,7 @@ export function diagnose(failure: ContainerFailure, command: string, phase: stri
     InvalidDefinition: ['Check Application exports, Plugin roles, binding keys and Profile requirements.'],
     NativeIntegrationNotReady: ['Check the local Host exports, SDK version and explicit Plugin entries.',
       'Application preflight does not verify model execution or business acceptance.'],
-    PreconditionNotSatisfied: ['Inspect the Task and its required Artifact types, versions and verification labels.',
+    PreconditionNotSatisfied: ['Inspect the Task and its required Artifact types, versions and assertion labels.',
       'Choose the next Profile explicitly; dependency resolution never starts a producer.'],
     BindingConflict: ['Inspect all candidates and select an explicit identity; do not silently choose the newest Artifact.'],
     NativeExecutionFailed: ['Inspect the Session failure, aspect failures and native rejection events.',

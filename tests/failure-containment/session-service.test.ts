@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { executeSession, LocalTaskStore, prepareSession } from '../../packages/container-core/src/index.ts';
-import type { SessionHost } from '../../packages/container-core/src/index.ts';
+import { executeSession, LocalTaskStore, prepareSession } from '../../packages/container-core/src/internal.ts';
+import type { SessionHost } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, session, timestamp } from '../helpers.ts';
 
 test('failed native initialization records failure but never consumption or domain execution', async (t) => {

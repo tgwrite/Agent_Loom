@@ -1,3 +1,6 @@
+import { toHostTaskStore } from './host.ts';
+import type { HostTaskStore } from './host.ts';
+import { matchesArtifact } from './artifact/index.ts';
 import { randomUUID } from 'node:crypto';
 import type { ApplicationDefinition } from './application/index.ts';
 import { validateApplication } from './application/index.ts';
@@ -22,7 +25,7 @@ import { operationSummary } from './operation.ts';
 import { identifier } from './record-validation.ts';
 import { withTaskWriter } from './task-writer.ts';
 
-export type { AgentRequest, EntryContract, DataSchema } from './invocation.ts';
+export type { AgentRequest, EntryContract, EntryPresentation, DataSchema } from './invocation.ts';
 export interface DiscoveryFilter { id?: string; name?: string; tag?: string; input_type?: string; output_type?: string }
 
 function profileFor(application: ApplicationDefinition, entryId: string): SessionProfile {
@@ -36,16 +39,17 @@ export function describeEntry(application: ApplicationDefinition, entryId: strin
   validateApplication(application);
   const profile = profileFor(application, entryId);
   const entry = profile.entry;
+  const presentation = profile.presentation;
   const primary = application.plugins.find(p => p.id === profile.primary);
   return structuredClone({ schema_version: 1 as const, entry_id: entry?.id ?? profile.id, profile_id: profile.id,
-    name: entry?.name ?? profile.id, purpose: entry?.purpose ?? 'Execute this declared Session Profile.',
-    tags: entry?.tags ?? [], implementation: entry?.implementation ?? 'unknown',
+    name: typeof presentation?.name === 'string' ? presentation.name : profile.id,
+    purpose: typeof presentation?.purpose === 'string' ? presentation.purpose : 'Execute this declared Run Profile.',
+    tags: Array.isArray(presentation?.tags) ? presentation.tags.filter(tag => typeof tag === 'string') : [],
+    implementation: ['native', 'synthetic'].includes(presentation?.implementation ?? '') ? presentation!.implementation : 'unknown',
     inputs: profile.requirements, outputs: primary?.produces ?? [], output_scope: 'primary-plugin-declarations',
     execution_scope: 'new-session', business_validator: 'application-owned',
-    acceptance_artifacts: entry?.acceptance_artifacts ?? [],
     request_mapping: entry?.request_mapping ?? 'unsupported',
-    effect_declarations: entry?.effect_declarations ?? [], effects_enforcement: 'unknown',
-    retry_safety: 'not-guaranteed', examples: entry?.examples ?? [], data_examples: entry?.data_examples ?? [],
+    retry_safety: 'not-guaranteed', examples: presentation?.examples ?? [], data_examples: presentation?.data_examples ?? [],
     participants: { primary: profile.primary ?? null, aspects: profile.aspects },
     request_schema: requestSchema(profile),
     parameter_validation: { envelope: 'schema-v1', data: entry?.data_schema !== undefined ? 'loom-data-schema-v1' : 'application-owned', hard_limits: 'unsupported' } });
@@ -68,7 +72,7 @@ export interface AgentHostBinding {
   delivery?: 'declared' | 'invalid';
   /** Trusted binding identity; request payload cannot replace it. */
   actor: ActorRef;
-  createHost(context: { store: LocalTaskStore; plan: SessionPlan }): SessionHost | Promise<SessionHost>;
+  createHost(context: { store: HostTaskStore; plan: SessionPlan }): SessionHost | Promise<SessionHost>;
   /** Optional trusted read-only registration check. Must not instantiate adapters. */
   checkBindings?(plan: SessionPlan): Promise<void>;
   /** Explicit opt-in; may import native resources. Never implies model/credential validation. */
@@ -107,9 +111,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
       const inputs: { name: string | null; status: 'satisfied' | 'blocked'; artifact_id?: string; candidates: string[] }[] = [];
       const artifacts = await store.listArtifacts();
       for (const requirement of invocationRequirements(profile, store.task.id, request)) {
-        const candidates = artifacts.filter(a => a.type === requirement.type && a.version === requirement.version
-          && a.verification.status === requirement.verification_status
-          && (requirement.artifact_id === undefined || a.id === requirement.artifact_id)).map(a => a.id);
+        const candidates = artifacts.filter(a => matchesArtifact(a, requirement)).map(a => a.id);
         try {
           const ref = await store.resolveArtifact(requirement);
           inputs.push({ name: requirement.input_name ?? null, status: 'satisfied', artifact_id: ref.id, candidates });
@@ -162,8 +164,8 @@ export async function connectLoom(options: AgentConnectionOptions) {
         declaration: 'valid', inputs, blockers, host: { delivery: hostDelivery, bindings: hostBindings, bindings_unchecked_reason: bindingsReason },
         native_preflight: { status: native, unchecked_reason: nativeReason, coverage: native === 'passed' ? 'host-defined-resources' : 'none', effect_scope: nativeAttempted ? 'trusted-native-code-may-load' : 'none' },
         readiness_checks: { declaration: 'passed', host_bindings: hostBindings, ...nativeChecks,
-          model_configuration: 'not-checked', credentials: 'not-checked', business_acceptance: 'not-checked' },
-        unchecked: ['artifact-bytes', 'model-configuration', 'credentials', 'domain-initialization', 'business-acceptance', 'external-side-effects'],
+          model_configuration: 'not-checked', credentials: 'not-checked' },
+        unchecked: ['artifact-bytes', 'model-configuration', 'credentials', 'domain-initialization', 'external-side-effects'],
         observation_only: true };
     },
     async invoke(value: AgentRequest): Promise<AgentReceipt> {
@@ -177,7 +179,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
         const plan = await prepareSession(store, profile.id, undefined, request);
         if (!binding || hostDelivery !== 'declared') throw new ContainerFailure('NativeIntegrationNotReady', 'Host delivery is missing.');
         hostEntered = true;
-        const host = await binding.createHost({ store, plan: structuredClone(plan) });
+        const host = await binding.createHost({ store: toHostTaskStore(store), plan: structuredClone(plan) });
         await executeSession(store, plan, host, binding.actor, observation => {
           sessionId = observation.session_id;
           if (observation.phase === 'domain-started') started = true;
@@ -198,7 +200,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
           participants: unobservedParticipants(profileFor(application, request.entry_id)),
           observation: { history: 'unreadable', recorded_session_status: null, outcome_confirmed: !hostEntered },
           requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
-          business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(error, 'governance-storage', started),
+          diagnostic: diagnosticFor(error, 'governance-storage', started),
           inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
       }
       return { schema_version: 1, request_id: request.request_id, task_id: store.task.id, entry_id: request.entry_id,
@@ -206,7 +208,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
         participants: unobservedParticipants(profileFor(application, request.entry_id)),
         observation: { history: 'readable', recorded_session_status: null, outcome_confirmed: !hostEntered },
         requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
-        business_acceptance: { status: 'not-evaluated' }, diagnostic: diagnosticFor(failure, 'native', started),
+        diagnostic: diagnosticFor(failure, 'native', started),
         inspection_ref: { task_id: store.task.id, session_id: sessionId }, retry_safety: 'not-established' };
     },
     async inspect(filter: { entry_id?: string; session_id?: string; request_id?: string; artifact_id?: string } = {}) {
@@ -229,7 +231,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
             request_id: null, identity_migration: 'not-inferred', ...projectSessionFacts(s) }),
           artifacts: snapshot.artifacts.filter(a => (!filter.artifact_id || a.id === filter.artifact_id)
             && ((!filter.session_id && !filter.entry_id && !filter.request_id) || relatedArtifacts.has(a.id)))
-            .map(a => ({ id: a.id, type: a.type, version: a.version, producer: a.producer, sha256: a.sha256, verification: a.verification,
+            .map(a => ({ id: a.id, type: a.type, version: a.version, producer: a.producer, sha256: a.sha256, assertion: a.assertion,
               consumers: a.consumers.filter(c => (!filter.session_id && !filter.entry_id && !filter.request_id) || sessionIds.has(c.session_id))
                 .map(c => ({ id: c.id, artifact_id: c.artifact_id, accepted_sha256: c.sha256, consumer_session_id: c.session_id,
                   consumer_plugin_id: c.consumer_plugin_id, consumed_at: c.consumed_at })) })) };
@@ -266,7 +268,7 @@ export async function connectLoom(options: AgentConnectionOptions) {
         session_id: null, execution: { status: invocationAttempted ? 'unknown' : 'not-started', domain_execution_started: invocationAttempted ? 'unknown' : false },
         observation: { history, recorded_session_status: null, outcome_confirmed: !invocationAttempted },
         requested_inputs: requestedInputs(request), resolved_inputs: { status: 'unavailable', bindings: [] }, consumed: [],
-        artifacts: [], aspect_failures: [], business_acceptance: { status: 'not-evaluated' },
+        artifacts: [], aspect_failures: [],
         participants: unobservedParticipants(profileFor(application, request.entry_id)),
         diagnostic: diagnosticFor(error, 'governance-storage', invocationAttempted ? undefined : false),
         inspection_ref: { task_id: store.task.id, session_id: null }, retry_safety: 'not-established' };

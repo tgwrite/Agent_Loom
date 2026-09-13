@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import { LocalTaskStore } from '../../packages/container-core/src/index.ts';
+import { LocalTaskStore } from '../../packages/container-core/src/internal.ts';
 import { artifact, fixture, requirement, session, timestamp } from '../helpers.ts';
 
 test('a new store resolves the original reference after producer Session exit', async (t) => {
@@ -26,7 +26,7 @@ test('missing, non-READY and different-version dependencies do not create Sessio
   await assert.rejects(store.resolveArtifact(requirement), { code: 'PreconditionNotSatisfied' });
   assert.deepEqual(await store.listSessions(), []);
   await store.startSession(session());
-  await store.publishArtifact({ ...artifact(), verification: { status: 'PENDING' } });
+  await store.publishArtifact({ ...artifact(), assertion: { status: 'PENDING' } });
   await assert.rejects(store.resolveArtifact(requirement), { code: 'PreconditionNotSatisfied' });
   await assert.rejects(store.resolveArtifact({ ...requirement, version: '4' }), { code: 'PreconditionNotSatisfied' });
   assert.equal((await store.listSessions()).length, 1);
@@ -77,7 +77,7 @@ test('native provenance must match producer role and native Session and survives
   assert.equal((await reopened.listArtifacts()).length, 1);
 });
 
-test('legacy artifacts remain readable without fabricated native provenance or storage rewrites', async t => {
+test('non-native artifacts remain readable without fabricated native provenance or storage rewrites', async t => {
   const { root, store } = await fixture(t);
   await store.startSession(session());
   await store.publishArtifact(artifact());

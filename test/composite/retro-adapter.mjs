@@ -68,7 +68,7 @@ export function retroAdapter(config) {
       const report = await readFile(join(output, reportNames[0]), 'utf8');
       assert(report.trim() && report === await readFile(join(output, 'workflow-improvement-report-latest.md'), 'utf8'));
       return [[summaryName, 'retro.session-review'], [reportNames[0], 'retro.improvement-report']].map(([name, type]) => ({
-        type, version: '1', verification_status: 'COMPLETED',
+        type, version: '1', assertion_status: 'COMPLETED',
         path: relative(context.task_root, join(output, name)).replaceAll('\\', '/'),
       }));
     },
