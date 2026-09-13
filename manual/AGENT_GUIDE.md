@@ -7,8 +7,8 @@ work may proceed based on declared evidence. The core concepts are Task, Run,
 Artifact, Requirement and Consumption. Plugins own domain truth; the Agent chooses
 work. Discover, Describe and Check are convenience interfaces over this kernel.
 
-This manual describes the **0.2.0-alpha.1 development candidate**, not a published
-release or proof of real Plugin compatibility. Start with [onboarding](START_HERE.md)
+This manual describes the **0.2.0-alpha.1 pre-release**. Real Plugin compatibility
+requires separate validation. Start with [onboarding](START_HERE.md)
 and the [native example](NATIVE_INTEGRATION.md).
 
 ## Compatibility and migration

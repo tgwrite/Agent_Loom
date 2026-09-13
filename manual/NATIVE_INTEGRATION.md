@@ -13,7 +13,7 @@ logic. See [adapting another plugin](#adapting-another-plugin).
 ## Prepare the application directory
 
 First follow [installation](INSTALL.md) in your own project. Keep the project-local
-Loom 0.2.0-alpha.1 candidate dependency. Set the project-local Task index as described in
+Loom 0.2.0-alpha.1 pre-release dependency. Set the project-local Task index as described in
 [Getting started](START_HERE.md#2-install-and-establish-the-version), or choose
 Task names not already registered in your per-user index. Add these pinned dependencies:
 

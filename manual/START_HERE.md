@@ -19,7 +19,7 @@ facade and the Pi bridge. An application supplies its plugin descriptors, native
 registrations, domain validation and model configuration. Installing a native Pi
 package does not automatically supply a Loom registration.
 
-This candidate does not include a catalog of ready-made third-party adapters. The examples
+This pre-release does not include a catalog of ready-made third-party adapters. The examples
 under `test/` in the repository are contributor experiments, not installation
 dependencies. Reuse a separately documented adapter when one exists. Otherwise,
 implement the boundary using the plugin's **documented API** and the contracts
@@ -29,8 +29,9 @@ specific missing contract; do not infer it from the package name or claim suppor
 ## 2. Install and establish the version
 
 Use Node.js >=24.12.0 and npm for Loom; native dependencies can require a newer
-Node version. Build the unreleased candidate with `npm ci` and `npm run package:local`
-in a source checkout; use its `.tgz`, `SHA256SUMS` and `INSTALL.md`.
+Node version. Download the 0.2.0-alpha.1 `.tgz`, `SHA256SUMS` and `INSTALL.md` from
+[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases), or build the archive
+with `npm ci` and `npm run package:local` in a source checkout.
 In an empty application directory containing the archive:
 
 ```sh

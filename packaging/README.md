@@ -3,12 +3,14 @@
 **Declared evidence gates selected Agent work. Loom records provenance, exact
 consumption and durable execution facts; Plugins own domain truth.**
 
-Development candidate: 0.2.0-alpha.1. This local package is not a published release
-or evidence of real Plugin compatibility. Read the migration chapter before upgrading.
+Pre-release: 0.2.0-alpha.1. Real Plugin compatibility remains separately unverified.
+Read the migration chapter before upgrading.
 
 Canonical source: https://github.com/tgwrite/Agent_Loom
 
-This is a precompiled archive. To build one yourself, run `npm ci` and
+Download this precompiled archive, `SHA256SUMS` and `INSTALL.md` from
+[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
+To build one yourself, run `npm ci` and
 `npm run package:local` in the source checkout; the installed package has no build scripts.
 
 This precompiled package provides the `loom` CLI, Core SDK and Pi Runtime bridge.

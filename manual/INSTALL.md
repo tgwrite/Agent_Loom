@@ -2,12 +2,13 @@
 
 For the complete application workflow, continue with [Getting started](START_HERE.md).
 
-Use Node.js >=24.12.0 with npm. This manual targets the unreleased 0.2.0-alpha.1
-candidate. Build its local archive from a source checkout with `npm ci` followed by
-`npm run package:local`. Keep the archive and SHA256SUMS for local installation.
+Use Node.js >=24.12.0 with npm. This manual targets the 0.2.0-alpha.1 pre-release.
+Download `agent-loom-0.2.0-alpha.1.tgz`, `SHA256SUMS` and `INSTALL.md` from
+[GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases). Keep the archive
+and checksum together for installation. No npm registry release is available.
 Review [migration](AGENT_GUIDE.md#compatibility-and-migration) before upgrading.
 
-Run these commands in the source checkout, not in the installed package:
+To build the archive yourself, run these commands in the source checkout:
 
 ```sh
 npm ci
@@ -56,7 +57,7 @@ import { createPiApplicationHost } from 'agent-loom/runtime-pi';
 ```
 
 TypeScript declarations are included. The SDK uses ESM; CommonJS and browser use
-are not part of this candidate's acceptance scope. Global CLI installation does
+are not part of this pre-release's acceptance scope. Global CLI installation does
 not replace installing the SDK dependency in your project.
 
 ## Synthetic installation example

@@ -4,8 +4,8 @@
 运行和排错。Loom 根据声明的证据控制执行资格，记录来源、消费与执行事实；模型选择
 工作，领域插件判断事实。按下面的顺序阅读，无需通过框架或测试实现反推 Loom 接口。
 
-适用 API：**0.2.0-alpha.1，尚未发布的开发候选**。原生教程固定使用 Pi **0.85.1**。
-0.2.0-alpha.1 本地候选安装包包含本目录，安装后可在 `node_modules/agent-loom/manual/` 离线阅读。
+适用 API：**0.2.0-alpha.1 预发布版**。原生教程固定使用 Pi **0.85.1**。
+0.2.0-alpha.1 安装包包含本目录，安装后可在 `node_modules/agent-loom/manual/` 离线阅读。
 旧版使用者先阅读[破坏性变更与 Task schema 3 迁移说明](AGENT_GUIDE.md#compatibility-and-migration)。
 旧 Task 不会自动升级，也不能通过直接修改 schema 数字恢复运行。
 

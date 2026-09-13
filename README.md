@@ -6,7 +6,7 @@ Models choose work; domain Plugins produce and verify facts. Loom records who pr
 an Artifact, which exact evidence a consumer accepted, and what execution outcome is
 durably confirmed. Its core concepts are Task, Run, Artifact, Requirement and Consumption.
 
-[User manual / 使用手册](manual/README.md) · [Install local candidate](manual/INSTALL.md) ·
+[User manual / 使用手册](manual/README.md) · [Download alpha](https://github.com/tgwrite/Agent_Loom/releases) ·
 [中文介绍](README.zh-CN.md) · [Agent reading map](llms.txt)
 
 ## The governance loop
@@ -35,9 +35,9 @@ a successful Check is not a reservation or permission to bypass initialization.
 
 ## Install and use
 
-**Development candidate: 0.2.0-alpha.1 (unreleased).** Build a local archive with
-`npm ci` and `npm run package:local`. See [installation](manual/INSTALL.md) for `.tgz`
-installation and [migration](manual/AGENT_GUIDE.md#compatibility-and-migration) before upgrading.
+**Current pre-release: 0.2.0-alpha.1.** Download the precompiled `.tgz`, `SHA256SUMS`
+and `INSTALL.md` from [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases).
+See [installation](manual/INSTALL.md) and read [migration](manual/AGENT_GUIDE.md#compatibility-and-migration) before upgrading.
 Requires Node.js >=24.12.0 and npm; native plugins may require a newer Node version.
 No npm registry release is available.
 

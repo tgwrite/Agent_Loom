@@ -4,14 +4,14 @@
 > exact consumption and durable execution facts stay outside model authority.
 
 Canonical repository: https://github.com/tgwrite/Agent_Loom
-Documentation target: 0.2.0-alpha.1 unreleased development candidate; build locally.
+Documentation target: 0.2.0-alpha.1 pre-release; archive distribution through GitHub Releases.
 Runtime integration: Pi. Core remains independent of Pi.
 Requirements: Node.js >=24.12.0, npm, ESM. Native dependencies may require more.
 
 ## User manual: follow this path
 
 - [Manual index](manual/README.md): 使用手册入口、阅读顺序与验证范围。
-- [Install](manual/INSTALL.md): Build, verify and install the local candidate archive.
+- [Install](manual/INSTALL.md): Download or build, verify and install the pre-release archive.
 - [Getting started](manual/START_HERE.md): Choose caller/developer/adapter work; run a complete synthetic lifecycle.
 - [Call an application](manual/AGENT_API.md): CLI/SDK sequence, request fields, Host binding and artifact selection.
 - [Native integration tutorial](manual/NATIVE_INTEGRATION.md): Every file for a real Pi application; default-model setup, native tool execution and output validation.

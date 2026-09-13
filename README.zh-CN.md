@@ -6,7 +6,7 @@
 核心概念收敛为 Task、Run、Artifact、Requirement、Consumption。提供 TypeScript SDK
 与 JSON CLI，运行时接入面向 Pi。
 
-[使用手册](manual/README.md) · [安装本地候选包](manual/INSTALL.md) ·
+[使用手册](manual/README.md) · [下载预发布版](https://github.com/tgwrite/Agent_Loom/releases) ·
 [English](README.md) · [Agent 文档导航](llms.txt)
 
 ## 治理闭环
@@ -32,8 +32,8 @@
 
 ## 安装与使用
 
-**开发候选版本：0.2.0-alpha.1，尚未发布。** 使用 `npm ci` 和 `npm run package:local`
-构建本地安装包，按[安装手册](manual/INSTALL.md)使用。Loom 要求 Node.js >=24.12.0
+**当前预发布版本：0.2.0-alpha.1。** 从 [GitHub Releases](https://github.com/tgwrite/Agent_Loom/releases)
+下载预编译 `.tgz`、`SHA256SUMS` 和 `INSTALL.md`，按[安装手册](manual/INSTALL.md)使用。Loom 要求 Node.js >=24.12.0
 与 npm；升级前阅读[破坏性变更和迁移说明](manual/AGENT_GUIDE.md#compatibility-and-migration)。
 
 在源码仓库中体验无需原生依赖的流程：
